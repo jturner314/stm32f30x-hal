@@ -30,11 +30,16 @@
 extern crate cast;
 extern crate cortex_m;
 extern crate embedded_hal as hal;
+extern crate heapless;
 extern crate nb;
+extern crate vcell;
 pub extern crate stm32f30x;
 extern crate void;
 
+pub mod adc;
+pub mod dac;
 pub mod delay;
+pub mod dma;
 pub mod flash;
 pub mod gpio;
 pub mod i2c;
@@ -42,5 +47,6 @@ pub mod prelude;
 pub mod rcc;
 pub mod serial;
 pub mod spi;
+pub mod syscfg;
 pub mod time;
 pub mod timer;
