@@ -38,6 +38,12 @@ pub struct PushPull;
 /// Open drain output (type state)
 pub struct OpenDrain;
 
+/// Analog mode (type state).
+///
+/// Note that the DAC can modify the output voltage of an analog pin with only
+/// a reference (`&`) to the pin; a mutable reference (`&mut`) is not required.
+pub struct Analog;
+
 /// Alternate function 0 (type state)
 pub struct AF0;
 
@@ -99,7 +105,7 @@ macro_rules! gpio {
 
             use rcc::AHB;
             use super::{
-                AF4, AF5, AF6, AF7, Floating, GpioExt, Input, OpenDrain, Output,
+                AF4, AF5, AF6, AF7, Analog, Floating, GpioExt, Input, OpenDrain, Output,
                 PullDown, PullUp, PushPull,
             };
 
@@ -418,6 +424,23 @@ macro_rules! gpio {
                         otyper
                             .otyper()
                             .modify(|r, w| unsafe { w.bits(r.bits() & !(0b1 << $i)) });
+
+                        $PXi { _mode: PhantomData }
+                    }
+
+                    /// Configures the pin to operate as an analog input/output pin
+                    pub fn into_analog(
+                        self,
+                        moder: &mut MODER,
+                    ) -> $PXi<Analog> {
+                        let offset = 2 * $i;
+
+                        moder.moder().modify(|r, w| unsafe {
+                            // 0b11 is analog mode
+                            w.bits(r.bits() | (0b11 << offset))
+                        });
+
+                        // OTYPER and PUPDR have no effect on analog pins
 
                         $PXi { _mode: PhantomData }
                     }

@@ -30,10 +30,13 @@
 extern crate cast;
 extern crate cortex_m;
 extern crate embedded_hal as hal;
+extern crate heapless;
 extern crate nb;
 pub extern crate stm32f30x;
 extern crate void;
 
+pub mod adc;
+pub mod dac;
 pub mod delay;
 pub mod flash;
 pub mod gpio;
