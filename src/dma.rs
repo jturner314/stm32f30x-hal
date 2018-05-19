@@ -12,16 +12,14 @@ use core::sync::atomic;
 use rcc::AHB;
 use strong_scope_guard::ScopeGuard;
 
-/// The DMA channel is enabled (type state).
+/// An ongoing DMA transfer.
 ///
-/// The lifetime `'b` is the lifetime of the borrows of the source and destination.
-pub struct Enabled<'a, 'b: 'a> {
-    guard: &'a mut ScopeGuard<'b, fn()>,
-}
-
-/// The DMA channel is disabled (type state).
-pub struct Disabled {
-    _0: (),
+/// The lifetime `'guard` is the lifetime of the borrow of the `ScopeGuard`.
+/// The lifetime `'data` is the lifetime of the source and destination data
+/// buffers.
+pub struct Transfer<'guard, 'data: 'guard, Channel> {
+    guard: &'guard mut ScopeGuard<'data, fn()>,
+    channel: Channel,
 }
 
 /// Extension trait to split the DMA block into independent channels.
@@ -179,7 +177,7 @@ macro_rules! dma {
                 pub $dmax: $Dmax,
                 $(
                     /// Channel
-                    pub $chani: $Channeli<Disabled>,
+                    pub $chani: $Channeli,
                 )+
             }
 
@@ -192,9 +190,7 @@ macro_rules! dma {
                     Parts {
                         $dmax: $Dmax { reg: self },
                         $(
-                            $chani: $Channeli  {
-                                state: Disabled { _0: () },
-                            },
+                            $chani: $Channeli  { _0: () },
                         )+
                     }
                 }
@@ -220,35 +216,11 @@ macro_rules! dma {
 
             $(
                 /// Token that represents control of the DMA channel.
-                pub struct $Channeli<State> {
-                    state: State,
+                pub struct $Channeli {
+                    _0: (),
                 }
 
-                impl $Channeli<Disabled> {
-                    /// Returns the CNDTR register.
-                    ///
-                    /// (This register must not be written while the channel is enabled.)
-                    fn cndtr_mut(&mut self) -> &$CNDTRi {
-                        // The channel has exclusive access to its register.
-                        unsafe { &(*$DMAx::ptr()).$cndtri }
-                    }
-
-                    /// Returns the CPAR register.
-                    ///
-                    /// (This register must not be written while the channel is enabled.)
-                    fn cpar_mut(&mut self) -> &$CPARi {
-                        // The channel has exclusive access to its register.
-                        unsafe { &(*$DMAx::ptr()).$cpari }
-                    }
-
-                    /// Returns the CMAR register.
-                    ///
-                    /// (This register must not be written while the channel is enabled.)
-                    fn cmar_mut(&mut self) -> &$CMARi {
-                        // The channel has exclusive access to its register.
-                        unsafe { &(*$DMAx::ptr()).$cmari }
-                    }
-
+                impl $Channeli {
                     // /// Enables a DMA transfer from a peripheral register to a memory buffer. (The
                     // /// number of data to be transferred is `mem.len()`.)
                     // ///
@@ -348,31 +320,29 @@ macro_rules! dma {
                     ///
                     /// **Panics** if `src.len() > ::core::u16::MAX as usize` or if `src.len() !=
                     /// dst.len()`.
-                    pub fn start_mem_to_mem<'a, 'b, S, D>(
+                    pub fn start_mem_to_mem<'guard, 'data, S, D>(
                         mut self,
-                        guard: &'a mut ScopeGuard<'b, fn()>,
-                        src: &'b [S],
-                        dst: &'b mut [D],
+                        guard: &'guard mut ScopeGuard<'data, fn()>,
+                        src: &'data [S],
+                        dst: &'data mut [D],
                         priority: Priority,
-                    ) -> $Channeli<Enabled<'a, 'b>>
+                    ) -> Transfer<'guard, 'data, $Channeli>
                     where
                         S: DataElem,
                         D: DataElem + FromBits<S>,
                     {
                         // This implementation treats `src` as the peripheral.
-                        self.cpar_mut().write(|w| unsafe {
-                            w.pa().bits(src.as_ptr() as u32)
-                        });
-                        self.cmar_mut().write(|w| unsafe {
-                            w.ma().bits(dst.as_ptr() as u32)
-                        });
+                        unsafe {
+                            self.cpar_mut().write(|w| w.pa().bits(src.as_ptr() as u32));
+                            self.cmar_mut().write(|w| w.ma().bits(dst.as_ptr() as u32));
+                        }
                         assert_eq!(src.len(), dst.len());
                         if src.len() > ::core::u16::MAX as usize {
                             panic!("DMA request buffer is too long: {}", src.len())
                         }
-                        self.cndtr_mut().write(|w| unsafe {
-                            w.ndt().bits(src.len() as u16)
-                        });
+                        unsafe {
+                            self.cndtr_mut().write(|w| w.ndt().bits(src.len() as u16));
+                        }
                         // Note that this is `write`, not `modify`, so it disables the interrupts.
                         self.ccr_mut().write(|w| {
                             w.dir().clear_bit();
@@ -384,49 +354,83 @@ macro_rules! dma {
                             unsafe { w.pl().bits(priority.to_bits()); }
                             w.mem2mem().set_bit()
                         });
+
+                        // Ensure that all writes to `src` have completed
+                        // before enabling the transfer.
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
+
                         guard.assign(Some(|| {
                             // Disable the DMA channel.
                             unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit())
                         }));
                         self.ccr_mut().modify(|_, w| w.en().set_bit());
-                        $Channeli {
-                            state: Enabled { guard },
+                        Transfer {
+                            guard,
+                            channel: self,
                         }
                     }
                 }
 
-                impl<'a, 'b> $Channeli<Enabled<'a, 'b>> {
+                impl<'guard, 'data> Transfer<'guard, 'data, $Channeli> {
                     // TODO: return the mutable buffer (because &'static mut things are difficult to work with)
                     /// Waits for the DMA transfer to finish (blocking).
                     ///
                     /// Returns `Err` if there was a transfer error. (This occurs when a DMA
                     /// transfer is attempted to/from a reserved address space.)
-                    pub fn finish_blocking(mut self) -> Result<$Channeli<Disabled>, $Channeli<Disabled>> {
-                        while !self.transfer_error() && !self.transfer_complete() {}
+                    pub fn wait(self) -> Result<$Channeli, $Channeli> {
+                        let Transfer { guard, mut channel } = self;
+
+                        while !channel.transfer_error() && !channel.transfer_complete() {}
 
                         // Disable guard closure.
-                        self.state.guard.assign(None);
+                        guard.assign(None);
 
+                        // Ensure that the compiler does not try to use cached
+                        // values from `dest` instead of reading the new values
+                        // written by the DMA transfer.
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
-                        if self.transfer_error() {
+
+                        if channel.transfer_error() {
                             // The hardware automatically disables the channel in the error case.
-                            debug_assert!(self.ccr().en().bit_is_clear());
-                            self.clear_all_flags();
-                            Err($Channeli {
-                                state: Disabled { _0: () },
-                            })
+                            debug_assert!(channel.ccr().en().bit_is_clear());
+                            channel.clear_all_flags();
+                            Err(channel)
                         } else {
-                            self.ccr_mut().modify(|_, w| w.en().clear_bit());
-                            self.clear_all_flags();
-                            Ok($Channeli {
-                                state: Disabled { _0: () },
-                            })
+                            channel.ccr_mut().modify(|_, w| w.en().clear_bit());
+                            channel.clear_all_flags();
+                            Ok(channel)
                         }
                     }
                 }
 
-                impl<State> $Channeli<State> {
+                impl $Channeli {
+                    /// Returns the CNDTR register.
+                    ///
+                    /// This is safe as long as the register is not written
+                    /// while the channel is enabled.
+                    unsafe fn cndtr_mut(&mut self) -> &$CNDTRi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cndtri
+                    }
+
+                    /// Returns the CPAR register.
+                    ///
+                    /// This is safe as long as the register is not written
+                    /// while the channel is enabled.
+                    unsafe fn cpar_mut(&mut self) -> &$CPARi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cpari
+                    }
+
+                    /// Returns the CMAR register.
+                    ///
+                    /// This is safe as long as the register is not written
+                    /// while the channel is enabled.
+                    unsafe fn cmar_mut(&mut self) -> &$CMARi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cmari
+                    }
+
                     /// Returns the CCR register.
                     ///
                     /// This register can be written while the channel is disabled or enabled.
