@@ -216,6 +216,7 @@ macro_rules! dma {
 
             $(
                 /// Token that represents control of the DMA channel.
+                #[derive(Debug)]
                 pub struct $Channeli {
                     _0: (),
                 }
@@ -372,12 +373,19 @@ macro_rules! dma {
                 }
 
                 impl<'guard, 'data> Transfer<'guard, 'data, $Channeli> {
+                    /// Returns `true` iff the transfer is complete or there was a fatal error.
+                    pub fn is_done(&self) -> bool {
+                        self.channel.transfer_error() || self.channel.transfer_complete()
+                    }
+
                     // TODO: return the mutable buffer (because &'static mut things are difficult to work with)
                     /// Waits for the DMA transfer to finish (blocking).
                     ///
-                    /// Returns `Err` if there was a transfer error. (This occurs when a DMA
-                    /// transfer is attempted to/from a reserved address space.)
-                    pub fn wait(self) -> Result<$Channeli, $Channeli> {
+                    /// **Panics** if there was a transfer error. (This occurs
+                    /// when a DMA transfer is attempted to/from a reserved
+                    /// address space, which is probably impossible using this
+                    /// HAL in safe rust.)
+                    pub fn wait(self) -> $Channeli {
                         let Transfer { guard, mut channel } = self;
 
                         while !channel.transfer_error() && !channel.transfer_complete() {}
@@ -394,12 +402,12 @@ macro_rules! dma {
                             // The hardware automatically disables the channel in the error case.
                             debug_assert!(channel.ccr().en().bit_is_clear());
                             channel.clear_all_flags();
-                            Err(channel)
-                        } else {
-                            channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                            channel.clear_all_flags();
-                            Ok(channel)
+                            panic!("DMA transfer error for channel {:?}", channel);
                         }
+
+                        channel.ccr_mut().modify(|_, w| w.en().clear_bit());
+                        channel.clear_all_flags();
+                        channel
                     }
                 }
 
