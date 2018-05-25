@@ -120,9 +120,9 @@ impl DataWidth {
     /// **Panics** if the width is not valid.
     fn width_of<T>() -> Self {
         match ::core::mem::size_of::<T>() {
-            8 => DataWidth::Bits8,
-            16 => DataWidth::Bits16,
-            32 => DataWidth::Bits32,
+            1 => DataWidth::Bits8,
+            2 => DataWidth::Bits16,
+            4 => DataWidth::Bits32,
             width => panic!("Illegal width for DMA transfer: {}", width),
         }
     }
