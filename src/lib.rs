@@ -33,6 +33,7 @@ extern crate embedded_hal as hal;
 extern crate nb;
 pub extern crate stm32f30x;
 extern crate strong_scope_guard;
+extern crate vcell;
 extern crate void;
 
 pub mod delay;

@@ -8,6 +8,7 @@
 use core::sync::atomic;
 use rcc::AHB;
 use strong_scope_guard::ScopeGuard;
+use vcell::VolatileCell;
 
 /// An ongoing DMA transfer.
 ///
@@ -218,99 +219,153 @@ macro_rules! dma {
                 }
 
                 impl $Channeli {
-                    // /// Enables a DMA transfer from a peripheral register to a memory buffer. (The
-                    // /// number of data to be transferred is `mem.len()`.)
-                    // ///
-                    // /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
-                    // ///
-                    // /// **Warning**: If `periph` is not actually a peripheral register, then this
-                    // /// transfer will never finish because the DMA will never receive any transfer
-                    // /// requests.
-                    // pub(crate) fn enable_periph_to_mem<'a, P, M>(
-                    //     mut self,
-                    //     periph: &'a VolatileCell<P>,
-                    //     mem: &'a mut [VolatileCell<M>],
-                    //     priority: Priority,
-                    // ) -> $Channeli<Enabled<'a>>
-                    // where
-                    //     P: DataElem,
-                    //     M: DataElem + FromBits<P>,
-                    // {
-                    //     self.cpar_mut().write(|w| unsafe {
-                    //         w.pa().bits(periph as *const VolatileCell<P> as *const P as u32)
-                    //     });
-                    //     self.cmar_mut().write(|w| unsafe {
-                    //         w.ma().bits(mem.as_ptr() as u32)
-                    //     });
-                    //     if mem.len() > ::core::u16::MAX as usize {
-                    //         panic!("DMA request buffer is too long: {}", mem.len())
-                    //     }
-                    //     self.cndtr_mut().write(|w| unsafe {
-                    //         w.ndt().bits(mem.len() as u16)
-                    //     });
-                    //     // Note that this is `write`, not `modify`, so it disables the interrupts.
-                    //     self.ccr_mut().write(|w| {
-                    //         w.dir().clear_bit();
-                    //         w.circ().clear_bit();
-                    //         w.pinc().clear_bit();
-                    //         w.minc().set_bit();
-                    //         unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
-                    //         unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
-                    //         unsafe { w.pl().bits(priority.to_bits()); }
-                    //         w.mem2mem().clear_bit()
-                    //     });
-                    //     self.ccr_mut().modify(|_, w| w.en().set_bit());
-                    //     $Channeli {
-                    //         _state: PhantomData,
-                    //     }
-                    // }
+                    /// Enables a DMA transfer from a peripheral register to a memory buffer with
+                    /// circular mode disabled.
+                    ///
+                    /// The number of data to be transferred is `mem.len()`.
+                    ///
+                    /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
+                    ///
+                    /// **Warning**: If `periph` is not actually a peripheral register, then this
+                    /// transfer will never finish because the DMA will never receive any transfer
+                    /// requests.
+                    pub(crate) fn enable_periph_to_mem<'body, 'data, P, M>(
+                        mut self,
+                        mut guard: ScopeGuard<'body, 'data, fn()>,
+                        periph: &'data VolatileCell<P>,
+                        mem: &'data mut [M],
+                        priority: Priority,
+                    ) -> Transfer<'body, 'data, Self>
+                    where
+                        P: DataElem,
+                        M: DataElem + FromBits<P>,
+                    {
+                        self.clear_all_flags();
+                        unsafe {
+                            // Assume that `VolatileCell` is a thin wrapper around `P`.
+                            self.cpar_mut().write(|w| w.pa().bits(periph as *const VolatileCell<P> as u32));
+                            self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
+                        }
+                        if mem.len() > ::core::u16::MAX as usize {
+                            panic!("DMA request buffer is too long: {}", mem.len())
+                        }
+                        unsafe {
+                            self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
+                        }
+                        // Note that this is `write`, not `modify`, so it disables the interrupts.
+                        self.ccr_mut().write(|w| {
+                            w.dir().clear_bit();
+                            w.circ().clear_bit();
+                            w.pinc().clear_bit();
+                            w.minc().set_bit();
+                            unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
+                            unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
+                            unsafe { w.pl().bits(priority.to_bits()); }
+                            w.mem2mem().clear_bit()
+                        });
 
-                    // /// Enables a DMA transfer from a memory buffer to a peripheral register. (The
-                    // /// number of data to be transferred is `mem.len()`.)
-                    // ///
-                    // /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
-                    // ///
-                    // /// **Warning**: If `periph` is not actually a peripheral register, then this
-                    // /// transfer will never finish because the DMA will never receive any transfer
-                    // /// requests.
-                    // pub(crate) fn enable_mem_to_periph<'a, M, P>(
-                    //     mut self,
-                    //     mem: &'a [M],
-                    //     periph: &'a mut VolatileCell<P>,
-                    //     priority: Priority,
-                    // ) -> $Channeli<Enabled<'a>>
-                    // where
-                    //     P: DataElem,
-                    //     M: DataElem + FromBits<P>,
-                    // {
-                    //     self.cpar_mut().write(|w| unsafe {
-                    //         w.pa().bits(periph as *const VolatileCell<P> as *const P as u32)
-                    //     });
-                    //     self.cmar_mut().write(|w| unsafe {
-                    //         w.ma().bits(mem.as_ptr() as u32)
-                    //     });
-                    //     if mem.len() > ::core::u16::MAX as usize {
-                    //         panic!("DMA request buffer is too long: {}", mem.len())
-                    //     }
-                    //     self.cndtr_mut().write(|w| unsafe {
-                    //         w.ndt().bits(mem.len() as u16)
-                    //     });
-                    //     // Note that this is `write`, not `modify`, so it disables the interrupts.
-                    //     self.ccr_mut().write(|w| {
-                    //         w.dir().set_bit();
-                    //         w.circ().clear_bit();
-                    //         w.pinc().clear_bit();
-                    //         w.minc().set_bit();
-                    //         unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
-                    //         unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
-                    //         unsafe { w.pl().bits(priority.to_bits()); }
-                    //         w.mem2mem().clear_bit()
-                    //     });
-                    //     self.ccr_mut().modify(|_, w| w.en().set_bit());
-                    //     $Channeli {
-                    //         _state: PhantomData,
-                    //     }
-                    // }
+                        // Set up the guard to disable the transfer before `mem` goes out of scope.
+                        guard.assign(Some(|| {
+                            // This is safe and we don't have to worry about concurrent access to
+                            // the register because:
+                            //
+                            // 1. The channel has exclusive access to its register.
+                            //
+                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
+                            //    the closure cannot not called while the `Transfer` is alive, so
+                            //    the `Transfer` instance cannot access the register concurrently
+                            //    with this closure.
+                            //
+                            // 3. The closure is disabled before returning the channel in
+                            //    `.wait()`, so the `$Channeli` instance cannot access the register
+                            //    concurrently with this closure.
+                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
+                        }));
+
+                        // Ensure that all reads from `mem` have completed before enabling the
+                        // transfer.
+                        atomic::compiler_fence(atomic::Ordering::SeqCst);
+
+                        self.ccr_mut().modify(|_, w| w.en().set_bit());
+                        Transfer {
+                            guard,
+                            channel: self,
+                        }
+                    }
+
+                    /// Enables a DMA transfer from a memory buffer to a peripheral register with
+                    /// circular mode disabled.
+                    ///
+                    /// The number of data to be transferred is `mem.len()`.
+                    ///
+                    /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
+                    ///
+                    /// **Warning**: If `periph` is not actually a peripheral register, then this
+                    /// transfer will never finish because the DMA will never receive any transfer
+                    /// requests.
+                    pub(crate) fn enable_mem_to_periph<'body, 'data, M, P>(
+                        mut self,
+                        mut guard: ScopeGuard<'body, 'data, fn()>,
+                        mem: &'data [M],
+                        periph: &'data mut VolatileCell<P>,
+                        priority: Priority,
+                    ) -> Transfer<'body, 'data, Self>
+                    where
+                        P: DataElem,
+                        M: DataElem + FromBits<P>,
+                    {
+                        self.clear_all_flags();
+                        unsafe {
+                            // Assume that `VolatileCell` is a thin wrapper around `P`.
+                            self.cpar_mut().write(|w| w.pa().bits(periph as *const VolatileCell<P> as u32));
+                            self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
+                        }
+                        if mem.len() > ::core::u16::MAX as usize {
+                            panic!("DMA request buffer is too long: {}", mem.len())
+                        }
+                        unsafe {
+                            self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
+                        }
+                        // Note that this is `write`, not `modify`, so it disables the interrupts.
+                        self.ccr_mut().write(|w| {
+                            w.dir().set_bit();
+                            w.circ().clear_bit();
+                            w.pinc().clear_bit();
+                            w.minc().set_bit();
+                            unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
+                            unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
+                            unsafe { w.pl().bits(priority.to_bits()); }
+                            w.mem2mem().clear_bit()
+                        });
+
+                        // Set up the guard to disable the transfer before `mem` goes out of scope.
+                        guard.assign(Some(|| {
+                            // This is safe and we don't have to worry about concurrent access to
+                            // the register because:
+                            //
+                            // 1. The channel has exclusive access to its register.
+                            //
+                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
+                            //    the closure cannot not called while the `Transfer` is alive, so
+                            //    the `Transfer` instance cannot access the register concurrently
+                            //    with this closure.
+                            //
+                            // 3. The closure is disabled before returning the channel in
+                            //    `.wait()`, so the `$Channeli` instance cannot access the register
+                            //    concurrently with this closure.
+                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
+                        }));
+
+                        // Ensure that all writes to `mem` have completed before enabling the
+                        // transfer.
+                        atomic::compiler_fence(atomic::Ordering::SeqCst);
+
+                        self.ccr_mut().modify(|_, w| w.en().set_bit());
+                        Transfer {
+                            guard,
+                            channel: self,
+                        }
+                    }
 
                     /// Starts a DMA transfer from `src` to `dst`. (The number of data to be
                     /// transferred is `src.len()`, which must be equal to `dst.len()`.)
