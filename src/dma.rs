@@ -14,11 +14,10 @@ use strong_scope_guard::ScopeGuard;
 
 /// An ongoing DMA transfer.
 ///
-/// The lifetime `'guard` is the lifetime of the borrow of the `ScopeGuard`.
-/// The lifetime `'data` is the lifetime of the source and destination data
-/// buffers.
-pub struct Transfer<'guard, 'data: 'guard, Channel> {
-    guard: &'guard mut ScopeGuard<'data, fn()>,
+/// The lifetimes `'body` and `'data` are from the `ScopeGuard` protecting the
+/// source and destination data buffers.
+pub struct Transfer<'body, 'data: 'body, Channel> {
+    guard: ScopeGuard<'body, 'data, fn()>,
     channel: Channel,
 }
 
@@ -321,17 +320,18 @@ macro_rules! dma {
                     ///
                     /// **Panics** if `src.len() > ::core::u16::MAX as usize` or if `src.len() !=
                     /// dst.len()`.
-                    pub fn start_mem_to_mem<'guard, 'data, S, D>(
+                    pub fn start_mem_to_mem<'body, 'data, S, D>(
                         mut self,
-                        guard: &'guard mut ScopeGuard<'data, fn()>,
+                        mut guard: ScopeGuard<'body, 'data, fn()>,
                         src: &'data [S],
                         dst: &'data mut [D],
                         priority: Priority,
-                    ) -> Transfer<'guard, 'data, $Channeli>
+                    ) -> Transfer<'body, 'data, Self>
                     where
                         S: DataElem,
                         D: DataElem + FromBits<S>,
                     {
+                        self.clear_all_flags();
                         // This implementation treats `src` as the peripheral.
                         unsafe {
                             self.cpar_mut().write(|w| w.pa().bits(src.as_ptr() as u32));
@@ -356,14 +356,29 @@ macro_rules! dma {
                             w.mem2mem().set_bit()
                         });
 
-                        // Ensure that all writes to `src` have completed
+                        // Set up the guard to disable the transfer before `src` and `dest` go out
+                        // of scope.
+                        guard.assign(Some(|| {
+                            // This is safe and we don't have to worry about concurrent access to
+                            // the register because:
+                            //
+                            // 1. The channel has exclusive access to its register.
+                            //
+                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
+                            //    the closure cannot not called while the `Transfer` is alive, so
+                            //    the `Transfer` instance cannot access the register concurrently
+                            //    with this closure.
+                            //
+                            // 3. The closure is disabled before returning the channel in
+                            //    `.wait()`, so the `$Channeli` instance cannot access the register
+                            //    concurrently with this closure.
+                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
+                        }));
+
+                        // Ensure that all writes to `src` and all reads from `dst` have completed
                         // before enabling the transfer.
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
 
-                        guard.assign(Some(|| {
-                            // Disable the DMA channel.
-                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit())
-                        }));
                         self.ccr_mut().modify(|_, w| w.en().set_bit());
                         Transfer {
                             guard,
@@ -372,7 +387,7 @@ macro_rules! dma {
                     }
                 }
 
-                impl<'guard, 'data> Transfer<'guard, 'data, $Channeli> {
+                impl<'body, 'data> Transfer<'body, 'data, $Channeli> {
                     /// Returns `true` iff the transfer is complete or there was a fatal error.
                     pub fn is_done(&self) -> bool {
                         self.channel.transfer_error() || self.channel.transfer_complete()
@@ -385,37 +400,34 @@ macro_rules! dma {
                     /// when a DMA transfer is attempted to/from a reserved
                     /// address space, which is probably impossible using this
                     /// HAL in safe rust.)
-                    pub fn wait(self) -> $Channeli {
-                        let Transfer { guard, mut channel } = self;
+                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>) {
+                        let Transfer { mut guard, mut channel } = self;
 
                         while !channel.transfer_error() && !channel.transfer_complete() {}
 
                         // Disable guard closure.
                         guard.assign(None);
 
-                        // Ensure that the compiler does not try to use cached
-                        // values from `dest` instead of reading the new values
-                        // written by the DMA transfer.
+                        // Ensure that the compiler does not try to use previously-read values from
+                        // `dst` instead of reading the new values written by the DMA transfer.
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
 
                         if channel.transfer_error() {
                             // The hardware automatically disables the channel in the error case.
                             debug_assert!(channel.ccr().en().bit_is_clear());
-                            channel.clear_all_flags();
                             panic!("DMA transfer error for channel {:?}", channel);
                         }
 
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        channel.clear_all_flags();
-                        channel
+                        (channel, guard)
                     }
                 }
 
                 impl $Channeli {
                     /// Returns the CNDTR register.
                     ///
-                    /// This is safe as long as the register is not written
-                    /// while the channel is enabled.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
                     unsafe fn cndtr_mut(&mut self) -> &$CNDTRi {
                         // The channel has exclusive access to its register.
                         &(*$DMAx::ptr()).$cndtri
@@ -423,8 +435,8 @@ macro_rules! dma {
 
                     /// Returns the CPAR register.
                     ///
-                    /// This is safe as long as the register is not written
-                    /// while the channel is enabled.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
                     unsafe fn cpar_mut(&mut self) -> &$CPARi {
                         // The channel has exclusive access to its register.
                         &(*$DMAx::ptr()).$cpari
@@ -432,25 +444,11 @@ macro_rules! dma {
 
                     /// Returns the CMAR register.
                     ///
-                    /// This is safe as long as the register is not written
-                    /// while the channel is enabled.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
                     unsafe fn cmar_mut(&mut self) -> &$CMARi {
                         // The channel has exclusive access to its register.
                         &(*$DMAx::ptr()).$cmari
-                    }
-
-                    /// Returns the CCR register.
-                    ///
-                    /// This register can be written while the channel is disabled or enabled.
-                    fn ccr_mut(&mut self) -> &$CCRi {
-                        // The channel has exclusive access to its register
-                        unsafe { &(*$DMAx::ptr()).$ccri }
-                    }
-
-                    /// Returns the value of the CCR register.
-                    fn ccr(&self) -> $ccri::R {
-                        // The channel has exclusive access to its register.
-                        unsafe { (*$DMAx::ptr()).$ccri.read() }
                     }
 
                     // /// Returns the value of the CNDTR register.
@@ -470,6 +468,20 @@ macro_rules! dma {
                     //     // The channel has exclusive access to its register.
                     //     unsafe { (*$DMAx::ptr()).$cmari.read() }
                     // }
+
+                    /// Returns the CCR register.
+                    ///
+                    /// This register can be written while the channel is disabled or enabled.
+                    fn ccr_mut(&mut self) -> &$CCRi {
+                        // The channel has exclusive access to its register
+                        unsafe { &(*$DMAx::ptr()).$ccri }
+                    }
+
+                    /// Returns the value of the CCR register.
+                    fn ccr(&self) -> $ccri::R {
+                        // The channel has exclusive access to its register.
+                        unsafe { (*$DMAx::ptr()).$ccri.read() }
+                    }
 
                     /// Returns the global interrupt flag for this channel.
                     pub fn global_interrupt(&self) -> bool {
@@ -556,24 +568,146 @@ dma!(
                 cpar => (cpar1, CPAR1),
                 cmar => (cmar1, CMAR1),
             ),
+        Channel2:
+            (
+                chan2,
+                gif => (gif2, cgif2),
+                tcif => (tcif2, ctcif2),
+                htif => (htif2, chtif2),
+                teif => (teif2, cteif2),
+                ccr => (ccr2, CCR2),
+                cndtr => (cndtr2, CNDTR2),
+                cpar => (cpar2, CPAR2),
+                cmar => (cmar2, CMAR2),
+            ),
+        Channel3:
+            (
+                chan3,
+                gif => (gif3, cgif3),
+                tcif => (tcif3, ctcif3),
+                htif => (htif3, chtif3),
+                teif => (teif3, cteif3),
+                ccr => (ccr3, CCR3),
+                cndtr => (cndtr3, CNDTR3),
+                cpar => (cpar3, CPAR3),
+                cmar => (cmar3, CMAR3),
+            ),
+        Channel4:
+            (
+                chan4,
+                gif => (gif4, cgif4),
+                tcif => (tcif4, ctcif4),
+                htif => (htif4, chtif4),
+                teif => (teif4, cteif4),
+                ccr => (ccr4, CCR4),
+                cndtr => (cndtr4, CNDTR4),
+                cpar => (cpar4, CPAR4),
+                cmar => (cmar4, CMAR4),
+            ),
+        Channel5:
+            (
+                chan5,
+                gif => (gif5, cgif5),
+                tcif => (tcif5, ctcif5),
+                htif => (htif5, chtif5),
+                teif => (teif5, cteif5),
+                ccr => (ccr5, CCR5),
+                cndtr => (cndtr5, CNDTR5),
+                cpar => (cpar5, CPAR5),
+                cmar => (cmar5, CMAR5),
+            ),
+        Channel6:
+            (
+                chan6,
+                gif => (gif6, cgif6),
+                tcif => (tcif6, ctcif6),
+                htif => (htif6, chtif6),
+                teif => (teif6, cteif6),
+                ccr => (ccr6, CCR6),
+                cndtr => (cndtr6, CNDTR6),
+                cpar => (cpar6, CPAR6),
+                cmar => (cmar6, CMAR6),
+            ),
+        Channel7:
+            (
+                chan7,
+                gif => (gif7, cgif7),
+                tcif => (tcif7, ctcif7),
+                htif => (htif7, chtif7),
+                teif => (teif7, cteif7),
+                ccr => (ccr7, CCR7),
+                cndtr => (cndtr7, CNDTR7),
+                cpar => (cpar7, CPAR7),
+                cmar => (cmar7, CMAR7),
+            ),
     ]
 );
-// dma!(
-//     DMA2,
-//     Dma1,
-//     Dma2Channel,
-//     dma2,
-//     dma2en,
-//     [
-//         Channel1:
-//             (
-//                 chan1,
-//                 (gif1, cgif1),
-//                 (tcif1, ctcif1),
-//                 (htif1, chtif1),
-//                 (teif1, cteif1),
-//                 ccr => (ccr1, CCR1),
-//                 cndtr => (cndtr1, CNDTR1),
-//             ),
-//     ]
-// );
+dma!(
+    DMA2,
+    Dma2,
+    Dma2Channel,
+    dma2,
+    dma2en,
+    [
+        Channel1:
+            (
+                chan1,
+                gif => (gif1, cgif1),
+                tcif => (tcif1, ctcif1),
+                htif => (htif1, chtif1),
+                teif => (teif1, cteif1),
+                ccr => (ccr1, CCR1),
+                cndtr => (cndtr1, CNDTR1),
+                cpar => (cpar1, CPAR1),
+                cmar => (cmar1, CMAR1),
+            ),
+        Channel2:
+            (
+                chan2,
+                gif => (gif2, cgif2),
+                tcif => (tcif2, ctcif2),
+                htif => (htif2, chtif2),
+                teif => (teif2, cteif2),
+                ccr => (ccr2, CCR2),
+                cndtr => (cndtr2, CNDTR2),
+                cpar => (cpar2, CPAR2),
+                cmar => (cmar2, CMAR2),
+            ),
+        Channel3:
+            (
+                chan3,
+                gif => (gif3, cgif3),
+                tcif => (tcif3, ctcif3),
+                htif => (htif3, chtif3),
+                teif => (teif3, cteif3),
+                ccr => (ccr3, CCR3),
+                cndtr => (cndtr3, CNDTR3),
+                cpar => (cpar3, CPAR3),
+                cmar => (cmar3, CMAR3),
+            ),
+        Channel4:
+            (
+                chan4,
+                gif => (gif4, cgif4),
+                tcif => (tcif4, ctcif4),
+                htif => (htif4, chtif4),
+                teif => (teif4, cteif4),
+                ccr => (ccr4, CCR4),
+                cndtr => (cndtr4, CNDTR4),
+                cpar => (cpar4, CPAR4),
+                cmar => (cmar4, CMAR4),
+            ),
+        Channel5:
+            (
+                chan5,
+                gif => (gif5, cgif5),
+                tcif => (tcif5, ctcif5),
+                htif => (htif5, chtif5),
+                teif => (teif5, cteif5),
+                ccr => (ccr5, CCR5),
+                cndtr => (cndtr5, CNDTR5),
+                cpar => (cpar5, CPAR5),
+                cmar => (cmar5, CMAR5),
+            ),
+    ]
+);
