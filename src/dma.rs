@@ -3,10 +3,7 @@
 // This should be true for all STM32 devices.
 #![cfg(target_pointer_width = "32")]
 
-// provide general methods that take ownership and use type states
-// can also provide blocking methods that just take &mut
-
-// THIS API IS UNSOUND
+// TODO: It should be possible to borrow the channel for `'data` instead of taking ownership.
 
 use core::sync::atomic;
 use rcc::AHB;
@@ -396,10 +393,10 @@ macro_rules! dma {
                     // TODO: return the mutable buffer (because &'static mut things are difficult to work with)
                     /// Waits for the DMA transfer to finish (blocking).
                     ///
-                    /// **Panics** if there was a transfer error. (This occurs
-                    /// when a DMA transfer is attempted to/from a reserved
-                    /// address space, which is probably impossible using this
-                    /// HAL in safe rust.)
+                    /// **Panics** if there was a transfer error. (This occurs when a DMA transfer
+                    /// is attempted to/from a reserved address space. This can happen if the stack
+                    /// is configured to be in CCM RAM and a DMA transfer is attempted to/from a
+                    /// stack-allocated buffer, since the DMA cannot access CCM RAM.)
                     pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>) {
                         let Transfer { mut guard, mut channel } = self;
 
