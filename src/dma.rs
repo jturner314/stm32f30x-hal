@@ -473,6 +473,15 @@ macro_rules! dma {
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
                         (channel, guard)
                     }
+
+                    /// Disables the DMA transfer without waiting for it to finish.
+                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>) {
+                        let Transfer { mut guard, mut channel } = self;
+                        channel.ccr_mut().modify(|_, w| w.en().clear_bit());
+                        guard.assign(None);
+                        atomic::compiler_fence(atomic::Ordering::SeqCst);
+                        (channel, guard)
+                    }
                 }
 
                 impl $Channeli {
