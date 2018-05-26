@@ -18,6 +18,13 @@ pub trait SysCfgExt {
 
 impl SysCfgExt for stm32f30x::SYSCFG {
     fn constrain(self) -> (SysCfg, Tokens) {
+        self.cfgr1.modify(|_, w| {
+            w.adc24_dma_rmp().clear_bit();
+            w.tim16_dma_rmp().clear_bit();
+            w.tim17_dma_rmp().clear_bit();
+            w.tim6_dac1_dma_rmp().clear_bit();
+            w.tim7_dac2_dma_rmp().clear_bit()
+        });
         (
             SysCfg { reg: self },
             Tokens {
@@ -51,7 +58,14 @@ pub struct Tokens {
 }
 
 macro_rules! dma_rmp {
-    ($name:ident, $Name:ident, $reg:ident, $doc:expr, $into_remapped_doc:expr, $into_not_remapped_doc:expr,) => {
+    (
+        $name:ident,
+        $Name:ident,
+        $reg:ident,
+        $doc:expr,
+        $into_remapped_doc:expr,
+        $into_not_remapped_doc:expr,
+    ) => {
         #[doc=$doc]
         pub struct $Name<State> {
             state: PhantomData<State>,
