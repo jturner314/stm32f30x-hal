@@ -57,6 +57,19 @@ impl Priority {
             Priority::VeryHigh => 0b11,
         }
     }
+
+    /// Returns the priority corresponding to the bit pattern.
+    ///
+    /// **Panics** if the bit battern is invalid.
+    fn from_bits(bits: u8) -> Priority {
+        match bits {
+            0b00 => Priority::Low,
+            0b01 => Priority::Medium,
+            0b10 => Priority::High,
+            0b11 => Priority::VeryHigh,
+            _ => panic!("Invalid bit pattern for Priority: {:b}", bits),
+        }
+    }
 }
 
 /// A trait that DMA-transferrable element types must implement.
@@ -234,7 +247,6 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         periph: &'data VolatileCell<P>,
                         mem: &'data mut [M],
-                        priority: Priority,
                     ) -> Transfer<'body, 'data, Self>
                     where
                         P: DataElem,
@@ -260,7 +272,6 @@ macro_rules! dma {
                             w.minc().set_bit();
                             unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
                             unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
-                            unsafe { w.pl().bits(priority.to_bits()); }
                             w.mem2mem().clear_bit()
                         });
 
@@ -308,7 +319,6 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         mem: &'data [M],
                         periph: &'data mut VolatileCell<P>,
-                        priority: Priority,
                     ) -> Transfer<'body, 'data, Self>
                     where
                         P: DataElem,
@@ -334,7 +344,6 @@ macro_rules! dma {
                             w.minc().set_bit();
                             unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
                             unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
-                            unsafe { w.pl().bits(priority.to_bits()); }
                             w.mem2mem().clear_bit()
                         });
 
@@ -377,7 +386,6 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         src: &'data [S],
                         dst: &'data mut [D],
-                        priority: Priority,
                     ) -> Transfer<'body, 'data, Self>
                     where
                         S: DataElem,
@@ -404,7 +412,6 @@ macro_rules! dma {
                             w.minc().set_bit();
                             unsafe { w.psize().bits(DataWidth::width_of::<S>().to_bits()); }
                             unsafe { w.msize().bits(DataWidth::width_of::<D>().to_bits()); }
-                            unsafe { w.pl().bits(priority.to_bits()); }
                             w.mem2mem().set_bit()
                         });
 
@@ -542,6 +549,16 @@ macro_rules! dma {
                     fn ccr(&self) -> $ccri::R {
                         // The channel has exclusive access to its register.
                         unsafe { (*$DMAx::ptr()).$ccri.read() }
+                    }
+
+                    /// Returns the channel priority level.
+                    pub fn priority(&self) -> Priority {
+                        Priority::from_bits(self.ccr().pl().bits())
+                    }
+
+                    /// Sets the channel priority level.
+                    pub fn set_priority(&mut self, priority: Priority) {
+                        self.ccr_mut().modify(|_, w| unsafe { w.pl().bits(priority.to_bits()) })
                     }
 
                     /// Returns the global interrupt flag for this channel.
