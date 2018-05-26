@@ -143,15 +143,17 @@ pub fn convert_data(bits: u16, align: Alignment, res: Resolution) -> u16 {
 
 /// Wrappers for ADC1 and ADC2.
 pub mod adc12 {
-    pub use self::channels::{Adc12Channels, Adc1Channel, Adc1ChannelId, Adc2Channel, Adc2ChannelId};
+    pub use self::channels::{
+        Adc12Channels, Adc1Channel, Adc1ChannelId, Adc2Channel, Adc2ChannelId,
+    };
 
+    use super::*;
     use core::cmp;
     use delay::Delay;
     use prelude::*;
     use rcc::{Clocks, AHB};
     use stm32f30x;
     use time::Hertz;
-    use super::*;
 
     /// Extension trait to split the ADC1 and ADC2 peripherals into a wrapper
     /// and channels.
@@ -529,9 +531,11 @@ pub mod adc12 {
                 /// Enable ADC voltage regulator.
                 pub fn power_on(self, delay: &mut Delay) -> $adc<PairState, Disabled> {
                     // Enable ADC voltage regulator.
-                    self.reg.cr
+                    self.reg
+                        .cr
                         .write(|w| w.deeppwd().clear_bit().advregen().clear_bit());
-                    self.reg.cr
+                    self.reg
+                        .cr
                         .write(|w| w.deeppwd().clear_bit().advregen().set_bit());
                     delay.delay_us(10u8);
 
@@ -589,7 +593,7 @@ pub mod adc12 {
                     }
                 }
             }
-        }
+        };
     }
     impl_single_disabled!(Adc1);
     impl_single_disabled!(Adc2);
@@ -614,7 +618,9 @@ pub mod adc12 {
                 pub fn set_resolution(&mut self, res: Resolution) {
                     debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
                     debug_assert!(self.reg.cr.read().jadstart().bit_is_clear());
-                    self.reg.cfgr.modify(|_, w| unsafe { w.res().bits(res.to_bits()) });
+                    self.reg
+                        .cfgr
+                        .modify(|_, w| unsafe { w.res().bits(res.to_bits()) });
                 }
 
                 /// Gets the data resolution.
@@ -651,16 +657,16 @@ pub mod adc12 {
                             match index {
                                 0 => {
                                     w.sq1().bits(chan.id() as u8);
-                                },
+                                }
                                 1 => {
                                     w.sq2().bits(chan.id() as u8);
-                                },
+                                }
                                 2 => {
                                     w.sq3().bits(chan.id() as u8);
-                                },
+                                }
                                 3 => {
                                     w.sq4().bits(chan.id() as u8);
-                                },
+                                }
                                 _ => unreachable!(),
                             }
                         }
@@ -671,19 +677,19 @@ pub mod adc12 {
                             match index {
                                 4 => {
                                     w.sq5().bits(chan.id() as u8);
-                                },
+                                }
                                 5 => {
                                     w.sq6().bits(chan.id() as u8);
-                                },
+                                }
                                 6 => {
                                     w.sq7().bits(chan.id() as u8);
-                                },
+                                }
                                 7 => {
                                     w.sq8().bits(chan.id() as u8);
-                                },
+                                }
                                 8 => {
                                     w.sq9().bits(chan.id() as u8);
-                                },
+                                }
                                 _ => unreachable!(),
                             }
                         }
@@ -694,19 +700,19 @@ pub mod adc12 {
                             match index {
                                 9 => {
                                     w.sq10().bits(chan.id() as u8);
-                                },
+                                }
                                 10 => {
                                     w.sq11().bits(chan.id() as u8);
-                                },
+                                }
                                 11 => {
                                     w.sq12().bits(chan.id() as u8);
-                                },
+                                }
                                 12 => {
                                     w.sq13().bits(chan.id() as u8);
-                                },
+                                }
                                 13 => {
                                     w.sq14().bits(chan.id() as u8);
-                                },
+                                }
                                 _ => unreachable!(),
                             }
                         }
@@ -717,10 +723,10 @@ pub mod adc12 {
                             match index {
                                 14 => {
                                     w.sq15().bits(chan.id() as u8);
-                                },
+                                }
                                 15 => {
                                     w.sq16().bits(chan.id() as u8);
-                                },
+                                }
                                 _ => unreachable!(),
                             }
                         }
@@ -734,7 +740,7 @@ pub mod adc12 {
                     }
                 }
             }
-        }
+        };
     }
     impl_single_enabled!(Adc1, Adc1Channel);
     impl_single_enabled!(Adc2, Adc2Channel);
@@ -863,11 +869,11 @@ pub mod adc12 {
 
     /// ADC1 and ADC2 channels.
     pub mod channels {
+        use super::*;
         use gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7};
         use gpio::gpiob::PB2;
         use gpio::gpioc::{PC0, PC1, PC2, PC3, PC4, PC5};
         use gpio::gpiof::{PF2, PF4};
-        use super::*;
 
         /// Channel is in single-ended mode.
         pub struct SingleEnded;
@@ -1151,11 +1157,19 @@ pub mod adc12 {
             };
             ($borrowed:ident, $id:ident, $channel:ident, $pos:ident, $neg:ident) => {
                 impl_from_pins!($borrowed, $id, $channel, $pos);
-                impl<'a> From<
-                    (&'a $channel<Differential>, &'a $pos<Analog>, &'a $neg<Analog>)
-                > for $borrowed<'a> {
+                impl<'a>
+                    From<(
+                        &'a $channel<Differential>,
+                        &'a $pos<Analog>,
+                        &'a $neg<Analog>,
+                    )> for $borrowed<'a>
+                {
                     fn from(
-                        _: (&'a $channel<Differential>, &'a $pos<Analog>, &'a $neg<Analog>)
+                        _: (
+                            &'a $channel<Differential>,
+                            &'a $pos<Analog>,
+                            &'a $neg<Analog>,
+                        ),
                     ) -> $borrowed<'a> {
                         $borrowed {
                             id: $id::$channel,
