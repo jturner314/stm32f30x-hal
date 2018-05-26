@@ -14,9 +14,10 @@ use vcell::VolatileCell;
 ///
 /// The lifetimes `'body` and `'data` are from the `ScopeGuard` protecting the
 /// source and destination data buffers.
-pub struct Transfer<'body, 'data: 'body, Channel> {
+pub struct Transfer<'body, 'data: 'body, Channel, OutBuf> {
     guard: ScopeGuard<'body, 'data, fn()>,
     channel: Channel,
+    out_buf: OutBuf,
 }
 
 /// Extension trait to split the DMA block into independent channels.
@@ -259,7 +260,7 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         periph: &'data VolatileCell<P>,
                         mem: &'data mut [M],
-                    ) -> Transfer<'body, 'data, Self>
+                    ) -> Transfer<'body, 'data, Self, &'data mut [M]>
                     where
                         P: DataElem,
                         M: DataElem + FromBits<P>,
@@ -313,6 +314,7 @@ macro_rules! dma {
                         Transfer {
                             guard,
                             channel: self,
+                            out_buf: mem,
                         }
                     }
 
@@ -331,7 +333,7 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         mem: &'data [M],
                         periph: &'data mut VolatileCell<P>,
-                    ) -> Transfer<'body, 'data, Self>
+                    ) -> Transfer<'body, 'data, Self, ()>
                     where
                         P: DataElem,
                         M: DataElem + FromBits<P>,
@@ -385,6 +387,7 @@ macro_rules! dma {
                         Transfer {
                             guard,
                             channel: self,
+                            out_buf: (),
                         }
                     }
 
@@ -398,7 +401,7 @@ macro_rules! dma {
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         src: &'data [S],
                         dst: &'data mut [D],
-                    ) -> Transfer<'body, 'data, Self>
+                    ) -> Transfer<'body, 'data, Self, &'data mut [D]>
                     where
                         S: DataElem,
                         D: DataElem + FromBits<S>,
@@ -454,11 +457,12 @@ macro_rules! dma {
                         Transfer {
                             guard,
                             channel: self,
+                            out_buf: dst,
                         }
                     }
                 }
 
-                impl<'body, 'data> Transfer<'body, 'data, $Channeli> {
+                impl<'body, 'data, OutBuf> Transfer<'body, 'data, $Channeli, OutBuf> {
                     /// Returns `true` iff the transfer is complete or there was a fatal error.
                     pub fn is_done(&self) -> bool {
                         self.channel.transfer_error() || self.channel.transfer_complete()
@@ -471,8 +475,8 @@ macro_rules! dma {
                     /// is attempted to/from a reserved address space. This can happen if the stack
                     /// is configured to be in CCM RAM and a DMA transfer is attempted to/from a
                     /// stack-allocated buffer, since the DMA cannot access CCM RAM.)
-                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>) {
-                        let Transfer { mut guard, mut channel } = self;
+                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>, OutBuf) {
+                        let Transfer { mut guard, mut channel, out_buf } = self;
 
                         while !channel.transfer_error() && !channel.transfer_complete() {}
 
@@ -490,16 +494,16 @@ macro_rules! dma {
                         }
 
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        (channel, guard)
+                        (channel, guard, out_buf)
                     }
 
                     /// Disables the DMA transfer without waiting for it to finish.
-                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>) {
-                        let Transfer { mut guard, mut channel } = self;
+                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>, OutBuf) {
+                        let Transfer { mut guard, mut channel, out_buf } = self;
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
                         guard.assign(None);
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
-                        (channel, guard)
+                        (channel, guard, out_buf)
                     }
                 }
 
