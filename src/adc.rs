@@ -6,8 +6,11 @@
 
 use core::marker::PhantomData;
 use cortex_m;
+use dma;
 use gpio::Analog;
 use heapless::Vec;
+use strong_scope_guard::ScopeGuard;
+use syscfg;
 
 /// Whether the internal reference voltage channel has been enabled on ADC12 or
 /// ADC34.
@@ -29,6 +32,11 @@ pub struct Enabled {}
 /// pins, and internal sensors in the sequence.
 pub struct WithSequence<'a> {
     life: PhantomData<&'a ()>,
+}
+/// The ADC is running with DMA.
+pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body> {
+    _seq: PhantomData<&'seq ()>,
+    _guard: ScopeGuard<'body, 'scope, fn()>,
 }
 
 /// ADCs in pair are in independent mode.
@@ -820,8 +828,8 @@ pub mod adc12 {
     impl_single_with_sequence!(Adc2, Adc2ChannelId);
 
     macro_rules! impl_single_independent_with_sequence {
-        ($adc:ident) => {
-            impl<'a> $adc<Independent, WithSequence<'a>> {
+        ($adc:ident, $dma_chan:ty) => {
+            impl<'seq> $adc<Independent, WithSequence<'seq>> {
                 /// Sets the ADC to single conversion mode; runs the regular
                 /// sequence; and for each conversion in the sequence, calls
                 /// `f` with the (zero-based) index within the sequence and the
@@ -861,11 +869,31 @@ pub mod adc12 {
                     debug_assert!(isr.ovr().bit_is_clear());
                 }
 
+                /// Sets the ADC to continuous conversion mode; configures and enables
+                /// the DMA channel for writing into the buffer in one shot mode; and
+                /// starts the regular sequence.
+                pub fn start_dma<'body, 'scope>(
+                    self,
+                    _buf: &'scope mut [u16],
+                    _guard: ScopeGuard<'body, 'scope, fn()>,
+                    _dma: $dma_chan,
+                ) -> Adc1<Independent, RunningDma<'seq, 'body, 'scope>>
+                where
+                    'seq: 'scope,
+                {
+                    unimplemented!()
+                }
             }
         };
     }
-    impl_single_independent_with_sequence!(Adc1);
-    impl_single_independent_with_sequence!(Adc2);
+    impl_single_independent_with_sequence!(Adc1, dma::dma1::Channel1);
+    impl_single_independent_with_sequence!(
+        Adc2,
+        (
+            dma::dma2::Channel1,
+            &'scope syscfg::Adc24DmaRemap<syscfg::NotRemapped>
+        )
+    );
 
     /// ADC1 and ADC2 channels.
     pub mod channels {
