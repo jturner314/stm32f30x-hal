@@ -1,5 +1,7 @@
 //! Time units
 
+use core::ops::{Div, Mul};
+
 use cortex_m::peripheral::DWT;
 
 use rcc::Clocks;
@@ -19,6 +21,35 @@ pub struct KiloHertz(pub u32);
 /// MegaHertz
 #[derive(Clone, Copy)]
 pub struct MegaHertz(pub u32);
+
+macro_rules! impl_freq_ops {
+    ($name:ident) => {
+        impl<Rhs> Div<Rhs> for $name
+        where
+            u32: Div<Rhs, Output = u32>,
+        {
+            type Output = Self;
+            fn div(self, rhs: Rhs) -> Self {
+                $name(Div::div(self.0, rhs))
+            }
+        }
+
+        impl<Rhs> Mul<Rhs> for $name
+        where
+            u32: Mul<Rhs, Output = u32>,
+        {
+            type Output = Self;
+            fn mul(self, rhs: Rhs) -> Self {
+                $name(Mul::mul(self.0, rhs))
+            }
+        }
+    }
+}
+
+impl_freq_ops!(Bps);
+impl_freq_ops!(Hertz);
+impl_freq_ops!(KiloHertz);
+impl_freq_ops!(MegaHertz);
 
 /// Extension trait that adds convenience methods to the `u32` type
 pub trait U32Ext {
