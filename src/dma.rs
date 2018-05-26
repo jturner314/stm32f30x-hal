@@ -86,6 +86,12 @@ impl DataElem for u32 {}
 impl DataElem for i32 {}
 impl DataElem for usize {}
 impl DataElem for isize {}
+impl DataElem for [u8; 2] {}
+impl DataElem for [i8; 2] {}
+impl DataElem for [u16; 2] {}
+impl DataElem for [i16; 2] {}
+impl DataElem for [u8; 4] {}
+impl DataElem for [i8; 4] {}
 
 /// A type that can be safely be produced from any possible bit pattern of the
 /// `Source` type (accounting for size and alignment).
@@ -113,6 +119,12 @@ unsafe impl<T: DataElem> FromBits<T> for u32 {}
 unsafe impl<T: DataElem> FromBits<T> for i32 {}
 unsafe impl<T: DataElem> FromBits<T> for usize {}
 unsafe impl<T: DataElem> FromBits<T> for isize {}
+unsafe impl<T: DataElem> FromBits<T> for [u8; 2] {}
+unsafe impl<T: DataElem> FromBits<T> for [i8; 2] {}
+unsafe impl<T: DataElem> FromBits<T> for [u16; 2] {}
+unsafe impl<T: DataElem> FromBits<T> for [i16; 2] {}
+unsafe impl<T: DataElem> FromBits<T> for [u8; 4] {}
+unsafe impl<T: DataElem> FromBits<T> for [i8; 4] {}
 
 /// Width of data elements.
 #[derive(Clone, Copy)]
