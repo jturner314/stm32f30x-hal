@@ -8,7 +8,6 @@
 use core::sync::atomic;
 use rcc::AHB;
 use strong_scope_guard::ScopeGuard;
-use vcell::VolatileCell;
 
 /// An ongoing DMA transfer.
 ///
@@ -250,15 +249,20 @@ macro_rules! dma {
                     ///
                     /// The number of data to be transferred is `mem.len()`.
                     ///
+                    /// This method is unsafe because it causes the DMA to read from the memory
+                    /// located at the `periph` raw pointer. The caller must ensure that the DMA
+                    /// can read from this location until the `'data` lifetime ends or until the
+                    /// DMA transfer is disabled, whichever is shorter.
+                    ///
                     /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
                     ///
                     /// **Warning**: If `periph` is not actually a peripheral register, then this
                     /// transfer will never finish because the DMA will never receive any transfer
                     /// requests.
-                    pub(crate) fn enable_periph_to_mem<'body, 'data, P, M>(
+                    pub(crate) unsafe fn enable_periph_to_mem<'body, 'data, P, M>(
                         mut self,
                         mut guard: ScopeGuard<'body, 'data, fn()>,
-                        periph: &'data VolatileCell<P>,
+                        periph: *const P,
                         mem: &'data mut [M],
                     ) -> Transfer<'body, 'data, Self, &'data mut [M]>
                     where
@@ -266,30 +270,25 @@ macro_rules! dma {
                         M: DataElem + FromBits<P>,
                     {
                         self.clear_all_flags();
-                        unsafe {
-                            // Assume that `VolatileCell` is a thin wrapper around `P`.
-                            self.cpar_mut().write(|w| w.pa().bits(periph as *const VolatileCell<P> as u32));
-                            self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
-                        }
+                        self.cpar_mut().write(|w| w.pa().bits(periph as u32));
+                        self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
                         if mem.len() > ::core::u16::MAX as usize {
                             panic!("DMA request buffer is too long: {}", mem.len())
                         }
-                        unsafe {
-                            self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
-                        }
+                        self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
                         // Note that this is `write`, not `modify`, so it disables the interrupts.
                         self.ccr_mut().write(|w| {
                             w.dir().clear_bit();
                             w.circ().clear_bit();
                             w.pinc().clear_bit();
                             w.minc().set_bit();
-                            unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
-                            unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
+                            w.psize().bits(DataWidth::width_of::<P>().to_bits());
+                            w.msize().bits(DataWidth::width_of::<M>().to_bits());
                             w.mem2mem().clear_bit()
                         });
 
                         // Set up the guard to disable the transfer before `mem` goes out of scope.
-                        guard.assign(Some(|| {
+                        guard.assign_handler(Some(|| {
                             // This is safe and we don't have to worry about concurrent access to
                             // the register because:
                             //
@@ -303,7 +302,7 @@ macro_rules! dma {
                             // 3. The closure is disabled before returning the channel in
                             //    `.wait()`, so the `$Channeli` instance cannot access the register
                             //    concurrently with this closure.
-                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
+                            (*$DMAx::ptr()).$ccri.modify(|_, w| w.en().clear_bit());
                         }));
 
                         // Ensure that all reads from `mem` have completed before enabling the
@@ -323,46 +322,46 @@ macro_rules! dma {
                     ///
                     /// The number of data to be transferred is `mem.len()`.
                     ///
+                    /// This method is unsafe because it causes the DMA to write to the memory
+                    /// located at the `periph` raw pointer. The caller must ensure that the DMA
+                    /// can write to this location until the `'data` lifetime ends or until the DMA
+                    /// transfer is disabled, whichever is shorter.
+                    ///
                     /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
                     ///
                     /// **Warning**: If `periph` is not actually a peripheral register, then this
                     /// transfer will never finish because the DMA will never receive any transfer
                     /// requests.
-                    pub(crate) fn enable_mem_to_periph<'body, 'data, M, P>(
+                    pub(crate) unsafe fn enable_mem_to_periph<'body, 'data, M, P>(
                         mut self,
                         mut guard: ScopeGuard<'body, 'data, fn()>,
                         mem: &'data [M],
-                        periph: &'data mut VolatileCell<P>,
+                        periph: *mut P,
                     ) -> Transfer<'body, 'data, Self, ()>
                     where
                         P: DataElem,
                         M: DataElem + FromBits<P>,
                     {
                         self.clear_all_flags();
-                        unsafe {
-                            // Assume that `VolatileCell` is a thin wrapper around `P`.
-                            self.cpar_mut().write(|w| w.pa().bits(periph as *const VolatileCell<P> as u32));
-                            self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
-                        }
+                        self.cpar_mut().write(|w| w.pa().bits(periph as u32));
+                        self.cmar_mut().write(|w| w.ma().bits(mem.as_ptr() as u32));
                         if mem.len() > ::core::u16::MAX as usize {
                             panic!("DMA request buffer is too long: {}", mem.len())
                         }
-                        unsafe {
-                            self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
-                        }
+                        self.cndtr_mut().write(|w| w.ndt().bits(mem.len() as u16));
                         // Note that this is `write`, not `modify`, so it disables the interrupts.
                         self.ccr_mut().write(|w| {
                             w.dir().set_bit();
                             w.circ().clear_bit();
                             w.pinc().clear_bit();
                             w.minc().set_bit();
-                            unsafe { w.psize().bits(DataWidth::width_of::<P>().to_bits()); }
-                            unsafe { w.msize().bits(DataWidth::width_of::<M>().to_bits()); }
+                            w.psize().bits(DataWidth::width_of::<P>().to_bits());
+                            w.msize().bits(DataWidth::width_of::<M>().to_bits());
                             w.mem2mem().clear_bit()
                         });
 
                         // Set up the guard to disable the transfer before `mem` goes out of scope.
-                        guard.assign(Some(|| {
+                        guard.assign_handler(Some(|| {
                             // This is safe and we don't have to worry about concurrent access to
                             // the register because:
                             //
@@ -376,7 +375,7 @@ macro_rules! dma {
                             // 3. The closure is disabled before returning the channel in
                             //    `.wait()`, so the `$Channeli` instance cannot access the register
                             //    concurrently with this closure.
-                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
+                            (*$DMAx::ptr()).$ccri.modify(|_, w| w.en().clear_bit());
                         }));
 
                         // Ensure that all writes to `mem` have completed before enabling the
@@ -432,7 +431,7 @@ macro_rules! dma {
 
                         // Set up the guard to disable the transfer before `src` and `dest` go out
                         // of scope.
-                        guard.assign(Some(|| {
+                        guard.assign_handler(Some(|| {
                             // This is safe and we don't have to worry about concurrent access to
                             // the register because:
                             //
@@ -480,8 +479,8 @@ macro_rules! dma {
 
                         while !channel.transfer_error() && !channel.transfer_complete() {}
 
-                        // Disable guard closure.
-                        guard.assign(None);
+                        // Disable guard handler.
+                        guard.assign_handler(None);
 
                         // Ensure that the compiler does not try to use previously-read values from
                         // `dst` instead of reading the new values written by the DMA transfer.
@@ -501,7 +500,7 @@ macro_rules! dma {
                     pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>, OutBuf) {
                         let Transfer { mut guard, mut channel, out_buf } = self;
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        guard.assign(None);
+                        guard.assign_handler(None);
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
                         (channel, guard, out_buf)
                     }
