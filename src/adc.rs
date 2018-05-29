@@ -21,25 +21,31 @@ use syscfg;
 static mut INTERNAL_REF_ENABLED: bool = false;
 
 /// ADC voltage regulator has not been powered on yet.
+#[derive(Debug)]
 pub struct Unpowered {}
 /// ADC voltage regulator is powered, but the ADC is disabled.
+#[derive(Debug)]
 pub struct Disabled {}
 /// ADC is enabled but not started.
+#[derive(Debug)]
 pub struct Enabled {}
 /// The ADC is enabled, and the sequence and data type have been selected.
 ///
 /// The lifetime `'a` is the lifetime of the borrows of the channels, GPIO
 /// pins, and internal sensors in the sequence.
+#[derive(Debug)]
 pub struct WithSequence<'a> {
     life: PhantomData<&'a ()>,
 }
 /// The ADC is running with DMA.
+#[derive(Debug)]
 pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     seq: PhantomData<&'seq ()>,
     transfer:
         dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
 }
 /// The master ADC is running with DMA.
+#[derive(Debug)]
 pub struct RunningDmaMaster<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     seq: PhantomData<&'seq ()>,
     transfer: dma::Transfer<
@@ -51,6 +57,7 @@ pub struct RunningDmaMaster<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     >,
 }
 /// The slave ADC is running with DMA.
+#[derive(Debug)]
 pub struct RunningDmaSlave<'seq: 'scope, 'body, 'scope: 'body> {
     seq: PhantomData<&'seq ()>,
     body: PhantomData<&'body ()>,
@@ -58,8 +65,10 @@ pub struct RunningDmaSlave<'seq: 'scope, 'body, 'scope: 'body> {
 }
 
 /// ADCs in pair are in independent mode.
+#[derive(Debug)]
 pub struct Independent {}
 /// ADCs in pair are in dual mode (combined regular simultaneous + injected simultaneous).
+#[derive(Debug)]
 pub struct Dual {}
 
 /// Error when configuring ADC sequences in in dual mode.

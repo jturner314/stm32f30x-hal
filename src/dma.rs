@@ -14,6 +14,7 @@ use strong_scope_guard::{ScopeEndHandler, ScopeGuard};
 ///
 /// The lifetimes `'body` and `'data` are from the `ScopeGuard` protecting the
 /// source and destination data buffers.
+#[derive(Debug)]
 pub struct Transfer<'body, 'data, Channel, OutBuf, Handler>
 where
     'data: 'body,
@@ -159,6 +160,7 @@ pub trait DmaChannel: Sized + Debug + DmaChannelPriv {
 ///
 /// 1. Wait until the end of the DMA transfer, then disable the DMA channel.
 /// 2. Call the peripheral handler.
+#[derive(Debug)]
 pub struct WaitHandler<H: ScopeEndHandler> {
     periph: H,
     dma: Option<unsafe fn()>,
