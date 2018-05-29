@@ -36,7 +36,9 @@ pub struct WithSequence<'a> {
 /// The ADC is running with DMA.
 pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     seq: PhantomData<&'seq ()>,
-    transfer: dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
+    transfer:
+        dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
+}
 }
 
 /// ADCs in pair are in independent mode.
@@ -149,6 +151,14 @@ pub fn convert_data(bits: u16, align: Alignment, res: Resolution) -> u16 {
     }
 }
 
+/// Tokens necessary to enable DMA for `Adc`.
+pub unsafe trait AdcDmaTokens<'scope, Adc> {
+    /// The DMA channel for this ADC.
+    type Channel: dma::DmaChannel;
+    /// Returns the DMA channel.
+    fn channel(self) -> Self::Channel;
+}
+
 /// Wrappers for ADC1 and ADC2.
 pub mod adc12 {
     pub use self::channels::{
@@ -158,6 +168,7 @@ pub mod adc12 {
     use super::*;
     use core::cmp;
     use delay::Delay;
+    use dma::DmaChannelPriv;
     use prelude::*;
     use rcc::{Clocks, AHB};
     use stm32f30x;
@@ -830,7 +841,7 @@ pub mod adc12 {
     impl_single_with_sequence!(Adc2, Adc2ChannelId);
 
     macro_rules! impl_single_independent_with_sequence {
-        ($Adc:ident, $ADC:ident, $dma_arg:ty, $dma_ident:ident @ $dma_pat:pat, $dma_chan:ty,) => {
+        ($Adc:ident, $ADC:ident) => {
             impl<'seq> $Adc<Independent, WithSequence<'seq>> {
                 /// Sets the ADC to single conversion mode; runs the regular
                 /// sequence; and for each conversion in the sequence, calls
@@ -874,16 +885,16 @@ pub mod adc12 {
                 /// Sets the ADC to continuous conversion mode with auto-delay;
                 /// configures and enables the DMA channel for writing into the
                 /// buffer in one shot mode; and starts the regular sequence.
-                pub fn start_dma<'body, 'scope>(
+                pub fn start_dma<'body, 'scope, D>(
                     self,
                     buf: &'scope mut [u16],
                     mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
-                    dma: $dma_arg,
-                ) -> $Adc<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>>
+                    dma: D,
+                ) -> $Adc<Independent, RunningDma<'seq, 'body, 'scope, D::Channel>>
                 where
                     'seq: 'scope,
+                    D: AdcDmaTokens<'scope, Self>,
                 {
-                    let $dma_pat = dma;
                     debug_assert!(self.reg.cr.read().aden().bit_is_set());
                     debug_assert!(self.reg.cr.read().addis().bit_is_clear());
                     debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
@@ -937,7 +948,7 @@ pub mod adc12 {
                         w.dmacfg().clear_bit() // one-shot mode
                     });
                     let data_reg = &(*self.reg).dr as *const _ as *const u32;
-                    let transfer = unsafe { $dma_ident.enable_periph_to_mem(guard, data_reg, buf) };
+                    let transfer = unsafe { dma.channel().enable_periph_to_mem(guard, data_reg, buf) };
 
                     self.reg.cr.modify(|_, w| w.adstart().set_bit());
                     $Adc {
@@ -953,35 +964,23 @@ pub mod adc12 {
             }
         };
     }
-    impl_single_independent_with_sequence!(
-        Adc1,
-        ADC1,
-        dma::dma1::Channel1,
-        dma_channel @ dma_channel,
-        dma::dma1::Channel1,
-    );
-    impl_single_independent_with_sequence!(
-        Adc2,
-        ADC2,
-        (
-            dma::dma2::Channel1,
-            &'scope syscfg::Adc24DmaRemap<syscfg::NotRemapped>
-        ),
-        dma_channel @ (dma_channel, _),
-        dma::dma2::Channel1,
-    );
+    impl_single_independent_with_sequence!(Adc1, ADC1);
+    impl_single_independent_with_sequence!(Adc2, ADC2);
 
     macro_rules! impl_single_independent_running_dma {
         ($Adc:ident, $dma_chan:ty) => {
-            impl<'seq, 'body, 'scope> $Adc<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>> {
+            impl<'seq, 'body, 'scope>
+                $Adc<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>>
+            {
                 /// Waits for the DMA transfer to finish.
-                pub fn wait(self) -> (
+                pub fn wait(
+                    self,
+                ) -> (
                     $Adc<Independent, WithSequence<'seq>>,
                     $dma_chan,
                     ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
                     &'scope mut [u16],
-                )
-                {
+                ) {
                     // Wait for DMA transfer to finish.
                     let (chan, mut guard, buf) = self.state.transfer.wait();
                     // The hardware should automatically stop the ADC. This loop is in case it
@@ -1001,9 +1000,7 @@ pub mod adc12 {
                             clock_freq: self.clock_freq,
                             reg: self.reg,
                             pair_state: self.pair_state,
-                            state: WithSequence {
-                                life: PhantomData,
-                            },
+                            state: WithSequence { life: PhantomData },
                         },
                         chan,
                         guard,
@@ -1015,6 +1012,39 @@ pub mod adc12 {
     }
     impl_single_independent_running_dma!(Adc1, dma::dma1::Channel1);
     impl_single_independent_running_dma!(Adc2, dma::dma2::Channel1);
+
+    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc1<PairState, State>>
+        for dma::dma1::Channel1
+    {
+        type Channel = dma::dma1::Channel1;
+        fn channel(self) -> Self::Channel {
+            self
+        }
+    }
+
+    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc2<PairState, State>>
+        for (
+            dma::dma2::Channel1,
+            &'scope syscfg::Adc24DmaRemap<syscfg::NotRemapped>,
+        )
+    {
+        type Channel = dma::dma2::Channel1;
+        fn channel(self) -> Self::Channel {
+            self.0
+        }
+    }
+
+    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc2<PairState, State>>
+        for (
+            dma::dma2::Channel3,
+            &'scope syscfg::Adc24DmaRemap<syscfg::Remapped>,
+        )
+    {
+        type Channel = dma::dma2::Channel3;
+        fn channel(self) -> Self::Channel {
+            self.0
+        }
+    }
 
     /// ADC1 and ADC2 channels.
     pub mod channels {

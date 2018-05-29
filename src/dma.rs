@@ -3,6 +3,9 @@
 // This should be true for all STM32 devices.
 #![cfg(target_pointer_width = "32")]
 
+pub(crate) use self::private::DmaChannelPriv;
+
+use core::fmt::Debug;
 use core::sync::atomic;
 use rcc::AHB;
 use strong_scope_guard::{ScopeEndHandler, ScopeGuard};
@@ -19,6 +22,133 @@ where
     guard: ScopeGuard<'body, 'data, Handler>,
     channel: Channel,
     out_buf: OutBuf,
+}
+
+/// Private module for preventing access to traits that appear in the public API.
+mod private {
+    use super::*;
+
+    /// Crate-local trait implemented by all DMA channels.
+    pub trait DmaChannelPriv: Sized {
+        /// Enables a DMA transfer from a peripheral register to a memory buffer with
+        /// circular mode disabled.
+        ///
+        /// The number of data to be transferred is `mem.len()`.
+        ///
+        /// The peripheral should add its handler to the `ScopeGuard` before passing
+        /// the guard to this method.
+        ///
+        /// This method is unsafe because it causes the DMA to read from the memory
+        /// located at the `periph` raw pointer. The caller must ensure that the DMA
+        /// can read from this location until the `'data` lifetime ends or until the
+        /// DMA transfer is disabled, whichever is shorter.
+        ///
+        /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
+        ///
+        /// **Warning**: If `periph` is not actually a peripheral register, then this
+        /// transfer will never finish because the DMA will never receive any transfer
+        /// requests.
+        unsafe fn enable_periph_to_mem<'body, 'data, P, M, H>(
+            self,
+            guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
+            periph: *const P,
+            mem: &'data mut [M],
+        ) -> Transfer<'body, 'data, Self, &'data mut [M], WaitHandler<H>>
+        where
+            P: DataElem,
+            M: DataElem + FromBits<P>,
+            H: ScopeEndHandler;
+
+        /// Enables a DMA transfer from a memory buffer to a peripheral register with
+        /// circular mode disabled.
+        ///
+        /// The number of data to be transferred is `mem.len()`.
+        ///
+        /// The peripheral should add its handler to the `ScopeGuard` before passing
+        /// the guard to this method.
+        ///
+        /// This method is unsafe because it causes the DMA to write to the memory
+        /// located at the `periph` raw pointer. The caller must ensure that the DMA
+        /// can write to this location until the `'data` lifetime ends or until the DMA
+        /// transfer is disabled, whichever is shorter.
+        ///
+        /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
+        ///
+        /// **Warning**: If `periph` is not actually a peripheral register, then this
+        /// transfer will never finish because the DMA will never receive any transfer
+        /// requests.
+        unsafe fn enable_mem_to_periph<'body, 'data, M, P, H>(
+            self,
+            guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
+            mem: &'data [M],
+            periph: *mut P,
+        ) -> Transfer<'body, 'data, Self, (), WaitHandler<H>>
+        where
+            P: DataElem,
+            M: DataElem + FromBits<P>,
+            H: ScopeEndHandler;
+
+        /// Returns `true` iff the channel is enabled.
+        #[doc(hidden)]
+        fn is_enabled(&self) -> bool;
+
+        /// Clears the enabled bit for this channel.
+        // We can safely expose this method because the `Transfer` instance
+        // contains the channel when it's enabled.
+        #[doc(hidden)]
+        fn clear_enabled(&mut self);
+    }
+}
+
+/// Trait implemented by all DMA channels.
+pub trait DmaChannel: Sized + Debug + DmaChannelPriv {
+    /// Starts a DMA transfer from `src` to `dst`. (The number of data to be
+    /// transferred is `src.len()`, which must be equal to `dst.len()`.)
+    ///
+    /// **Panics** if `src.len() > ::core::u16::MAX as usize` or if `src.len() !=
+    /// dst.len()`.
+    fn start_mem_to_mem<'body, 'data, S, D>(
+        self,
+        guard: ScopeGuard<'body, 'data, WaitHandler<()>>,
+        src: &'data [S],
+        dst: &'data mut [D],
+    ) -> Transfer<'body, 'data, Self, &'data mut [D], WaitHandler<()>>
+    where
+        S: DataElem,
+        D: DataElem + FromBits<S>;
+
+    /// Returns the channel priority level.
+    fn priority(&self) -> Priority;
+
+    /// Sets the channel priority level.
+    fn set_priority(&mut self, priority: Priority);
+
+    /// Returns the global interrupt flag for this channel.
+    fn global_interrupt(&self) -> bool;
+
+    /// Clears the global interrupt flag for this channel.
+    fn clear_global_interrupt(&mut self);
+
+    /// Returns the transfer complete flag for this channel.
+    fn transfer_complete(&self) -> bool;
+
+    /// Clears the transfer complete flag for this channel.
+    fn clear_transfer_complete(&mut self);
+
+    /// Returns the half transfer complete flag for this channel.
+    fn half_transfer_complete(&self) -> bool;
+
+    /// Clears the half transfer complete flag for this channel.
+    fn clear_half_transfer_complete(&mut self);
+
+    /// Returns the transfer error flag for this channel.
+    fn transfer_error(&self) -> bool;
+
+    /// Clears the transfer error flag for this channel.
+    fn clear_transfer_error(&mut self);
+
+    /// Clears all of the flags at the same time.
+    fn clear_all_flags(&mut self);
 }
 
 /// `ScopeGuard` handler for a DMA transfer.
@@ -211,6 +341,66 @@ impl DataWidth {
     }
 }
 
+impl<'body, 'data, Channel, OutBuf, Handler> Transfer<'body, 'data, Channel, OutBuf, Handler>
+where
+    Channel: DmaChannel,
+    Handler: DmaHandler,
+{
+    /// Returns `true` iff the transfer is complete or there was a fatal error.
+    pub fn is_done(&self) -> bool {
+        self.channel.transfer_error() || self.channel.transfer_complete()
+    }
+
+    /// Waits for the DMA transfer to finish (blocking).
+    ///
+    /// **Panics** if there was a transfer error. (This occurs when a DMA transfer
+    /// is attempted to/from a reserved address space. This can happen if the stack
+    /// is configured to be in CCM RAM and a DMA transfer is attempted to/from a
+    /// stack-allocated buffer, since the DMA cannot access CCM RAM.)
+    pub fn wait(self) -> (Channel, ScopeGuard<'body, 'data, Handler>, OutBuf) {
+        let Transfer {
+            mut guard,
+            mut channel,
+            out_buf,
+        } = self;
+
+        while !channel.transfer_error() && !channel.transfer_complete() {}
+
+        // Disable DMA portion of guard handler.
+        if let Some(handler) = guard.handler_mut() {
+            handler.disable_dma_handler();
+        }
+
+        // Ensure that the compiler does not try to use previously-read values from
+        // `dst` instead of reading the new values written by the DMA transfer.
+        atomic::compiler_fence(atomic::Ordering::SeqCst);
+
+        if channel.transfer_error() {
+            // The hardware automatically disables the channel in the error case.
+            debug_assert!(!channel.is_enabled());
+            panic!("DMA transfer error for channel {:?}", channel);
+        }
+
+        channel.clear_enabled();
+        (channel, guard, out_buf)
+    }
+
+    /// Disables the DMA transfer without waiting for it to finish.
+    pub fn disable(self) -> (Channel, ScopeGuard<'body, 'data, Handler>, OutBuf) {
+        let Transfer {
+            mut guard,
+            mut channel,
+            out_buf,
+        } = self;
+        channel.clear_enabled();
+        if let Some(handler) = guard.handler_mut() {
+            handler.disable_dma_handler();
+        }
+        atomic::compiler_fence(atomic::Ordering::SeqCst);
+        (channel, guard, out_buf)
+    }
+}
+
 macro_rules! dma {
     ($DMAx:ident, $Dmax:ident, $DmaxChannel:ident, $dmax:ident, $dmaxenr:ident, [
         $(
@@ -346,25 +536,68 @@ macro_rules! dma {
                     //     }
                     // }
 
-                    /// Enables a DMA transfer from a peripheral register to a memory buffer with
-                    /// circular mode disabled.
+                    /// Returns the CNDTR register.
                     ///
-                    /// The number of data to be transferred is `mem.len()`.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
+                    unsafe fn cndtr_mut(&mut self) -> &$CNDTRi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cndtri
+                    }
+
+                    /// Returns the CPAR register.
                     ///
-                    /// The peripheral should add its handler to the `ScopeGuard` before passing
-                    /// the guard to this method.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
+                    unsafe fn cpar_mut(&mut self) -> &$CPARi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cpari
+                    }
+
+                    /// Returns the CMAR register.
                     ///
-                    /// This method is unsafe because it causes the DMA to read from the memory
-                    /// located at the `periph` raw pointer. The caller must ensure that the DMA
-                    /// can read from this location until the `'data` lifetime ends or until the
-                    /// DMA transfer is disabled, whichever is shorter.
+                    /// This is safe as long as the register is not written while the channel is
+                    /// enabled.
+                    unsafe fn cmar_mut(&mut self) -> &$CMARi {
+                        // The channel has exclusive access to its register.
+                        &(*$DMAx::ptr()).$cmari
+                    }
+
+                    // /// Returns the value of the CNDTR register.
+                    // fn cndtr(&self) -> $cndtri::R {
+                    //     // The channel has exclusive access to its register.
+                    //     unsafe { (*$DMAx::ptr()).$cndtri.read() }
+                    // }
+
+                    // /// Returns the value of the CPAR register.
+                    // fn cpar(&self) -> $cpari::R {
+                    //     // The channel has exclusive access to its register.
+                    //     unsafe { (*$DMAx::ptr()).$cpari.read() }
+                    // }
+
+                    // /// Returns the value of the CMAR register.
+                    // fn cmar(&self) -> $cmari::R {
+                    //     // The channel has exclusive access to its register.
+                    //     unsafe { (*$DMAx::ptr()).$cmari.read() }
+                    // }
+
+                    /// Returns the CCR register.
                     ///
-                    /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
-                    ///
-                    /// **Warning**: If `periph` is not actually a peripheral register, then this
-                    /// transfer will never finish because the DMA will never receive any transfer
-                    /// requests.
-                    pub(crate) unsafe fn enable_periph_to_mem<'body, 'data, P, M, H>(
+                    /// This register can be written while the channel is disabled or enabled.
+                    fn ccr_mut(&mut self) -> &$CCRi {
+                        // The channel has exclusive access to its register
+                        unsafe { &(*$DMAx::ptr()).$ccri }
+                    }
+
+                    /// Returns the value of the CCR register.
+                    fn ccr(&self) -> $ccri::R {
+                        // The channel has exclusive access to its register.
+                        unsafe { (*$DMAx::ptr()).$ccri.read() }
+                    }
+                }
+
+                impl DmaChannelPriv for $Channeli {
+                    unsafe fn enable_periph_to_mem<'body, 'data, P, M, H>(
                         mut self,
                         mut guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
                         periph: *const P,
@@ -425,25 +658,7 @@ macro_rules! dma {
                         }
                     }
 
-                    /// Enables a DMA transfer from a memory buffer to a peripheral register with
-                    /// circular mode disabled.
-                    ///
-                    /// The number of data to be transferred is `mem.len()`.
-                    ///
-                    /// The peripheral should add its handler to the `ScopeGuard` before passing
-                    /// the guard to this method.
-                    ///
-                    /// This method is unsafe because it causes the DMA to write to the memory
-                    /// located at the `periph` raw pointer. The caller must ensure that the DMA
-                    /// can write to this location until the `'data` lifetime ends or until the DMA
-                    /// transfer is disabled, whichever is shorter.
-                    ///
-                    /// **Panics** if `mem.len() > ::core::u16::MAX as usize`.
-                    ///
-                    /// **Warning**: If `periph` is not actually a peripheral register, then this
-                    /// transfer will never finish because the DMA will never receive any transfer
-                    /// requests.
-                    pub(crate) unsafe fn enable_mem_to_periph<'body, 'data, M, P, H>(
+                    unsafe fn enable_mem_to_periph<'body, 'data, M, P, H>(
                         mut self,
                         mut guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
                         mem: &'data [M],
@@ -504,12 +719,17 @@ macro_rules! dma {
                         }
                     }
 
-                    /// Starts a DMA transfer from `src` to `dst`. (The number of data to be
-                    /// transferred is `src.len()`, which must be equal to `dst.len()`.)
-                    ///
-                    /// **Panics** if `src.len() > ::core::u16::MAX as usize` or if `src.len() !=
-                    /// dst.len()`.
-                    pub fn start_mem_to_mem<'body, 'data, S, D>(
+                    fn is_enabled(&self) -> bool {
+                        self.ccr().en().bit_is_set()
+                    }
+
+                    fn clear_enabled(&mut self) {
+                        self.ccr_mut().modify(|_, w| w.en().clear_bit());
+                    }
+                }
+
+                impl DmaChannel for $Channeli {
+                    fn start_mem_to_mem<'body, 'data, S, D>(
                         mut self,
                         mut guard: ScopeGuard<'body, 'data, WaitHandler<()>>,
                         src: &'data [S],
@@ -574,179 +794,56 @@ macro_rules! dma {
                             out_buf: dst,
                         }
                     }
-                }
 
-                impl<'body, 'data, OutBuf, Handler> Transfer<'body, 'data, $Channeli, OutBuf, Handler>
-                where
-                    Handler: DmaHandler,
-                {
-                    /// Returns `true` iff the transfer is complete or there was a fatal error.
-                    pub fn is_done(&self) -> bool {
-                        self.channel.transfer_error() || self.channel.transfer_complete()
-                    }
-
-                    /// Waits for the DMA transfer to finish (blocking).
-                    ///
-                    /// **Panics** if there was a transfer error. (This occurs when a DMA transfer
-                    /// is attempted to/from a reserved address space. This can happen if the stack
-                    /// is configured to be in CCM RAM and a DMA transfer is attempted to/from a
-                    /// stack-allocated buffer, since the DMA cannot access CCM RAM.)
-                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, Handler>, OutBuf) {
-                        let Transfer { mut guard, mut channel, out_buf } = self;
-
-                        while !channel.transfer_error() && !channel.transfer_complete() {}
-
-                        // Disable DMA portion of guard handler.
-                        if let Some(handler) = guard.handler_mut() {
-                            handler.disable_dma_handler();
-                        }
-
-                        // Ensure that the compiler does not try to use previously-read values from
-                        // `dst` instead of reading the new values written by the DMA transfer.
-                        atomic::compiler_fence(atomic::Ordering::SeqCst);
-
-                        if channel.transfer_error() {
-                            // The hardware automatically disables the channel in the error case.
-                            debug_assert!(channel.ccr().en().bit_is_clear());
-                            panic!("DMA transfer error for channel {:?}", channel);
-                        }
-
-                        channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        (channel, guard, out_buf)
-                    }
-
-                    /// Disables the DMA transfer without waiting for it to finish.
-                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, Handler>, OutBuf) {
-                        let Transfer { mut guard, mut channel, out_buf } = self;
-                        channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        if let Some(handler) = guard.handler_mut() {
-                            handler.disable_dma_handler();
-                        }
-                        atomic::compiler_fence(atomic::Ordering::SeqCst);
-                        (channel, guard, out_buf)
-                    }
-                }
-
-                impl $Channeli {
-                    /// Returns the CNDTR register.
-                    ///
-                    /// This is safe as long as the register is not written while the channel is
-                    /// enabled.
-                    unsafe fn cndtr_mut(&mut self) -> &$CNDTRi {
-                        // The channel has exclusive access to its register.
-                        &(*$DMAx::ptr()).$cndtri
-                    }
-
-                    /// Returns the CPAR register.
-                    ///
-                    /// This is safe as long as the register is not written while the channel is
-                    /// enabled.
-                    unsafe fn cpar_mut(&mut self) -> &$CPARi {
-                        // The channel has exclusive access to its register.
-                        &(*$DMAx::ptr()).$cpari
-                    }
-
-                    /// Returns the CMAR register.
-                    ///
-                    /// This is safe as long as the register is not written while the channel is
-                    /// enabled.
-                    unsafe fn cmar_mut(&mut self) -> &$CMARi {
-                        // The channel has exclusive access to its register.
-                        &(*$DMAx::ptr()).$cmari
-                    }
-
-                    // /// Returns the value of the CNDTR register.
-                    // fn cndtr(&self) -> $cndtri::R {
-                    //     // The channel has exclusive access to its register.
-                    //     unsafe { (*$DMAx::ptr()).$cndtri.read() }
-                    // }
-
-                    // /// Returns the value of the CPAR register.
-                    // fn cpar(&self) -> $cpari::R {
-                    //     // The channel has exclusive access to its register.
-                    //     unsafe { (*$DMAx::ptr()).$cpari.read() }
-                    // }
-
-                    // /// Returns the value of the CMAR register.
-                    // fn cmar(&self) -> $cmari::R {
-                    //     // The channel has exclusive access to its register.
-                    //     unsafe { (*$DMAx::ptr()).$cmari.read() }
-                    // }
-
-                    /// Returns the CCR register.
-                    ///
-                    /// This register can be written while the channel is disabled or enabled.
-                    fn ccr_mut(&mut self) -> &$CCRi {
-                        // The channel has exclusive access to its register
-                        unsafe { &(*$DMAx::ptr()).$ccri }
-                    }
-
-                    /// Returns the value of the CCR register.
-                    fn ccr(&self) -> $ccri::R {
-                        // The channel has exclusive access to its register.
-                        unsafe { (*$DMAx::ptr()).$ccri.read() }
-                    }
-
-                    /// Returns the channel priority level.
-                    pub fn priority(&self) -> Priority {
+                    fn priority(&self) -> Priority {
                         Priority::from_bits(self.ccr().pl().bits())
                     }
 
-                    /// Sets the channel priority level.
-                    pub fn set_priority(&mut self, priority: Priority) {
+                    fn set_priority(&mut self, priority: Priority) {
                         self.ccr_mut().modify(|_, w| unsafe { w.pl().bits(priority.to_bits()) })
                     }
 
-                    /// Returns the global interrupt flag for this channel.
-                    pub fn global_interrupt(&self) -> bool {
+                    fn global_interrupt(&self) -> bool {
                         // NOTE(unsafe) atomic read with no side effects
                         unsafe { (*$DMAx::ptr()).isr.read().$gifi().bit() }
                     }
 
-                    /// Clears the global interrupt flag for this channel.
-                    pub fn clear_global_interrupt(&mut self) {
+                    fn clear_global_interrupt(&mut self) {
                         // NOTE(unsafe) atomic write to a stateless register
                         unsafe { (*$DMAx::ptr()).ifcr.write(|w| w.$cgifi().set_bit()) }
                     }
 
-                    /// Returns the transfer complete flag for this channel.
-                    pub fn transfer_complete(&self) -> bool {
+                    fn transfer_complete(&self) -> bool {
                         // NOTE(unsafe) atomic read with no side effects
                         unsafe { (*$DMAx::ptr()).isr.read().$tcifi().bit() }
                     }
 
-                    /// Clears the transfer complete flag for this channel.
-                    pub fn clear_transfer_complete(&mut self) {
+                    fn clear_transfer_complete(&mut self) {
                         // NOTE(unsafe) atomic write to a stateless register
                         unsafe { (*$DMAx::ptr()).ifcr.write(|w| w.$ctcifi().set_bit()) }
                     }
 
-                    /// Returns the half transfer complete flag for this channel.
-                    pub fn half_transfer_complete(&self) -> bool {
+                    fn half_transfer_complete(&self) -> bool {
                         // NOTE(unsafe) atomic read with no side effects
                         unsafe { (*$DMAx::ptr()).isr.read().$htifi().bit() }
                     }
 
-                    /// Clears the half transfer complete flag for this channel.
-                    pub fn clear_half_transfer_complete(&mut self) {
+                    fn clear_half_transfer_complete(&mut self) {
                         // NOTE(unsafe) atomic write to a stateless register
                         unsafe { (*$DMAx::ptr()).ifcr.write(|w| w.$chtifi().set_bit()) }
                     }
 
-                    /// Returns the transfer error flag for this channel.
-                    pub fn transfer_error(&self) -> bool {
+                    fn transfer_error(&self) -> bool {
                         // NOTE(unsafe) atomic read with no side effects
                         unsafe { (*$DMAx::ptr()).isr.read().$teifi().bit() }
                     }
 
-                    /// Clears the transfer error flag for this channel.
-                    pub fn clear_transfer_error(&mut self) {
+                    fn clear_transfer_error(&mut self) {
                         // NOTE(unsafe) atomic write to a stateless register
                         unsafe { (*$DMAx::ptr()).ifcr.write(|w| w.$cteifi().set_bit()) }
                     }
 
-                    /// Clears all of the flags at the same time.
-                    pub fn clear_all_flags(&mut self) {
+                    fn clear_all_flags(&mut self) {
                         // NOTE(unsafe) atomic write to a stateless register
                         unsafe {
                             (*$DMAx::ptr()).ifcr.write(|w| {
