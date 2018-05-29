@@ -951,6 +951,22 @@ pub mod adc12 {
                         state: WithSequence { life: PhantomData },
                     }
                 }
+
+                /// Disables the ADC.
+                // TODO: Enable this in the `WithSequence` state.
+                pub fn disable(self) -> $adc<PairState, Disabled> {
+                    debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
+                    debug_assert!(self.reg.cr.read().jadstart().bit_is_clear());
+                    self.reg.cr.modify(|_, w| w.addis().set_bit());
+                    while self.reg.cr.read().aden().bit_is_set() {}
+                    debug_assert!(self.reg.cr.read().addis().bit_is_clear());
+                    $adc {
+                        clock_freq: self.clock_freq,
+                        reg: self.reg,
+                        pair_state: PhantomData,
+                        state: Disabled {},
+                    }
+                }
             }
         };
     }
@@ -1024,6 +1040,16 @@ pub mod adc12 {
                         }
                     }
                     ids
+                }
+
+                /// Drops the borrow of the sequence pins.
+                pub fn drop_sequence(self) -> $adc<PairState, Enabled> {
+                    $adc {
+                        clock_freq: self.clock_freq,
+                        reg: self.reg,
+                        pair_state: self.pair_state,
+                        state: Enabled {},
+                    }
                 }
             }
         };
