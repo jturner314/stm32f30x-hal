@@ -36,7 +36,7 @@ pub struct WithSequence<'a> {
 /// The ADC is running with DMA.
 pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     seq: PhantomData<&'seq ()>,
-    _transfer: dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
+    transfer: dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
 }
 
 /// ADCs in pair are in independent mode.
@@ -188,7 +188,7 @@ pub mod adc12 {
         clock_freq: Hertz,
         reg: stm32f30x::ADC1,
         pair_state: PhantomData<PairState>,
-        _state: State,
+        state: State,
     }
 
     /// ADC2 wrapper.
@@ -196,7 +196,7 @@ pub mod adc12 {
         clock_freq: Hertz,
         reg: stm32f30x::ADC2,
         pair_state: PhantomData<PairState>,
-        _state: State,
+        state: State,
     }
 
     /// Continuous iterator over regular conversions in dual simultaneous mode.
@@ -301,13 +301,13 @@ pub mod adc12 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
                     pair_state: self.adc1.pair_state,
-                    _state: Disabled {},
+                    state: Disabled {},
                 },
                 adc2: Adc2 {
                     clock_freq: self.adc2.clock_freq,
                     reg: self.adc2.reg,
                     pair_state: self.adc2.pair_state,
-                    _state: Disabled {},
+                    state: Disabled {},
                 },
             }
         }
@@ -326,13 +326,13 @@ pub mod adc12 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
                     pair_state: PhantomData,
-                    _state: self.adc1._state,
+                    state: self.adc1.state,
                 },
                 adc2: Adc2 {
                     clock_freq: self.adc2.clock_freq,
                     reg: self.adc2.reg,
                     pair_state: PhantomData,
-                    _state: self.adc2._state,
+                    state: self.adc2.state,
                 },
             }
         }
@@ -349,13 +349,13 @@ pub mod adc12 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
                     pair_state: PhantomData,
-                    _state: self.adc1._state,
+                    state: self.adc1.state,
                 },
                 adc2: Adc2 {
                     clock_freq: self.adc2.clock_freq,
                     reg: self.adc2.reg,
                     pair_state: PhantomData,
-                    _state: self.adc2._state,
+                    state: self.adc2.state,
                 },
             }
         }
@@ -376,13 +376,13 @@ pub mod adc12 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
                     pair_state: self.adc1.pair_state,
-                    _state: Enabled {},
+                    state: Enabled {},
                 },
                 adc2: Adc2 {
                     clock_freq: self.adc2.clock_freq,
                     reg: self.adc2.reg,
                     pair_state: self.adc2.pair_state,
-                    _state: Enabled {},
+                    state: Enabled {},
                 },
             }
         }
@@ -551,7 +551,7 @@ pub mod adc12 {
                         clock_freq: self.clock_freq,
                         reg: self.reg,
                         pair_state: PhantomData,
-                        _state: Disabled {},
+                        state: Disabled {},
                     }
                 }
             }
@@ -597,7 +597,7 @@ pub mod adc12 {
                         clock_freq: self.clock_freq,
                         reg: self.reg,
                         pair_state: PhantomData,
-                        _state: Enabled {},
+                        state: Enabled {},
                     }
                 }
             }
@@ -744,7 +744,7 @@ pub mod adc12 {
                         clock_freq: self.clock_freq,
                         reg: self.reg,
                         pair_state: PhantomData,
-                        _state: WithSequence { life: PhantomData },
+                        state: WithSequence { life: PhantomData },
                     }
                 }
             }
@@ -942,9 +942,9 @@ pub mod adc12 {
                         clock_freq: self.clock_freq,
                         reg: self.reg,
                         pair_state: self.pair_state,
-                        _state: RunningDma {
-                            seq: self._state.life,
-                            _transfer: transfer,
+                        state: RunningDma {
+                            seq: self.state.life,
+                            transfer: transfer,
                         },
                     }
                 }
@@ -981,7 +981,7 @@ pub mod adc12 {
                 )
                 {
                     // Wait for DMA transfer to finish.
-                    let (chan, mut guard, buf) = self._state._transfer.wait();
+                    let (chan, mut guard, buf) = self.state.transfer.wait();
                     // The hardware should automatically stop the ADC. This loop is in case it
                     // takes a little while to stop the ADC after the DMA transfer has completed.
                     // (The reference manual does not specify whether this is necessary.)
@@ -999,7 +999,7 @@ pub mod adc12 {
                             clock_freq: self.clock_freq,
                             reg: self.reg,
                             pair_state: self.pair_state,
-                            _state: WithSequence {
+                            state: WithSequence {
                                 life: PhantomData,
                             },
                         },
@@ -1411,13 +1411,13 @@ pub mod adc12 {
                             clock_freq,
                             reg: adc1,
                             pair_state: PhantomData,
-                            _state: Unpowered {},
+                            state: Unpowered {},
                         },
                         adc2: Adc2 {
                             clock_freq,
                             reg: adc2,
                             pair_state: PhantomData,
-                            _state: Unpowered {},
+                            state: Unpowered {},
                         },
                     },
                     Adc12Channels {
