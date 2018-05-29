@@ -32,7 +32,7 @@ fn main() -> ! {
     let mut rcc = stm32_periph.RCC.constrain();
     let _clocks = rcc.cfgr.freeze(&mut flash.acr);
 
-    let dma1::Parts { chan1, .. } = stm32_periph.DMA1.split(&mut rcc.ahb);
+    let dma1::Parts { mut chan1, .. } = stm32_periph.DMA1.split(&mut rcc.ahb);
 
     let src: [i32; 4] = [1, 2, 3, 4];
     let mut dst: [i32; 4] = [0, 0, 0, 0];
@@ -40,7 +40,8 @@ fn main() -> ! {
         iprintln!(&mut itm.stim[0], "src (before) = {:?}", src);
         iprintln!(&mut itm.stim[0], "dst (before) = {:?}", dst);
 
-        let transfer = chan1.start_mem_to_mem(guard, &src, &mut dst, Priority::default());
+        chan1.set_priority(Priority::default());
+        let transfer = chan1.start_mem_to_mem(guard, &src, &mut dst);
         transfer.wait();
     });
     iprintln!(&mut itm.stim[0], "src (after) = {:?}", src);

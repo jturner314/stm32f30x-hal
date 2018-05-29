@@ -34,9 +34,9 @@ pub struct WithSequence<'a> {
     life: PhantomData<&'a ()>,
 }
 /// The ADC is running with DMA.
-pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body> {
-    _seq: PhantomData<&'seq ()>,
-    _guard: ScopeGuard<'body, 'scope, fn()>,
+pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body, Channel> {
+    seq: PhantomData<&'seq ()>,
+    _transfer: dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
 }
 
 /// ADCs in pair are in independent mode.
@@ -828,8 +828,8 @@ pub mod adc12 {
     impl_single_with_sequence!(Adc2, Adc2ChannelId);
 
     macro_rules! impl_single_independent_with_sequence {
-        ($adc:ident, $dma_chan:ty) => {
-            impl<'seq> $adc<Independent, WithSequence<'seq>> {
+        ($Adc:ident, $ADC:ident, $dma_arg:ty, $dma_ident:ident @ $dma_pat:pat, $dma_chan:ty,) => {
+            impl<'seq> $Adc<Independent, WithSequence<'seq>> {
                 /// Sets the ADC to single conversion mode; runs the regular
                 /// sequence; and for each conversion in the sequence, calls
                 /// `f` with the (zero-based) index within the sequence and the
@@ -869,31 +869,150 @@ pub mod adc12 {
                     debug_assert!(isr.ovr().bit_is_clear());
                 }
 
-                /// Sets the ADC to continuous conversion mode; configures and enables
-                /// the DMA channel for writing into the buffer in one shot mode; and
-                /// starts the regular sequence.
+                /// Sets the ADC to continuous conversion mode with auto-delay;
+                /// configures and enables the DMA channel for writing into the
+                /// buffer in one shot mode; and starts the regular sequence.
                 pub fn start_dma<'body, 'scope>(
                     self,
-                    _buf: &'scope mut [u16],
-                    _guard: ScopeGuard<'body, 'scope, fn()>,
-                    _dma: $dma_chan,
-                ) -> Adc1<Independent, RunningDma<'seq, 'body, 'scope>>
+                    buf: &'scope mut [u16],
+                    mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+                    dma: $dma_arg,
+                ) -> $Adc<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>>
                 where
                     'seq: 'scope,
                 {
-                    unimplemented!()
+                    let $dma_pat = dma;
+                    debug_assert!(self.reg.cr.read().aden().bit_is_set());
+                    debug_assert!(self.reg.cr.read().addis().bit_is_clear());
+                    debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
+
+                    // Set the ADC to continuous conversion mode with
+                    // auto-delay and clear the DMA enable bit to reset any
+                    // pending DMA requests from this ADC.
+                    self.reg.cfgr.modify(|_, w| {
+                        w.cont().set_bit();
+                        w.autdly().set_bit();
+                        w.dmaen().clear_bit()
+                    });
+                    // Clear overrun, end-of-conversion, and end-of-sequence flags.
+                    self.reg.isr.write(|w| {
+                        w.ovr().set_bit();
+                        w.eoc().set_bit();
+                        w.eos().set_bit()
+                    });
+
+                    // Set up the guard to wait for the ADC to finish and disable generation of DMA
+                    // requests after the DMA transfer has completed.
+                    if let Some(handler) = guard.handler_mut() {
+                        handler.set_periph(Some(|| {
+                            // This is safe and we don't have to worry about concurrent access to the
+                            // register because:
+                            //
+                            // 1. The ADC has exclusive access to its register.
+                            //
+                            // 2. Since the running ADC has the `'body` lifetime from the `ScopeGuard`,
+                            //    the closure cannot not called while the running ADC is alive, so the
+                            //    running ADC cannot access the register concurrently with this
+                            //    closure.
+                            //
+                            // 3. The closure is disabled before returning the non-running ADC, so the
+                            //    non-running ADC cannot access the register concurrently with this
+                            //    closure.
+                            let reg = unsafe { &(*stm32f30x::$ADC::ptr()) };
+                            // The hardware should automatically stop the ADC after the DMA
+                            // transfer has completed. This loop is in case it takes the hardware a
+                            // little while to stop the ADC. (The reference manual does not specify
+                            // whether this is necessary.)
+                            while reg.cr.read().adstart().bit_is_set() {}
+                            // Disable generation of DMA requests.
+                            reg.cfgr.modify(|_, w| w.dmaen().clear_bit());
+                        }));
+                    }
+
+                    // Configure and enable the DMA transfer.
+                    self.reg.cfgr.modify(|_, w| {
+                        w.dmaen().set_bit();
+                        w.dmacfg().clear_bit() // one-shot mode
+                    });
+                    let data_reg = &(*self.reg).dr as *const _ as *const u32;
+                    let transfer = unsafe { $dma_ident.enable_periph_to_mem(guard, data_reg, buf) };
+
+                    self.reg.cr.modify(|_, w| w.adstart().set_bit());
+                    $Adc {
+                        clock_freq: self.clock_freq,
+                        reg: self.reg,
+                        pair_state: self.pair_state,
+                        _state: RunningDma {
+                            seq: self._state.life,
+                            _transfer: transfer,
+                        },
+                    }
                 }
             }
         };
     }
-    impl_single_independent_with_sequence!(Adc1, dma::dma1::Channel1);
+    impl_single_independent_with_sequence!(
+        Adc1,
+        ADC1,
+        dma::dma1::Channel1,
+        dma_channel @ dma_channel,
+        dma::dma1::Channel1,
+    );
     impl_single_independent_with_sequence!(
         Adc2,
+        ADC2,
         (
             dma::dma2::Channel1,
             &'scope syscfg::Adc24DmaRemap<syscfg::NotRemapped>
-        )
+        ),
+        dma_channel @ (dma_channel, _),
+        dma::dma2::Channel1,
     );
+
+    macro_rules! impl_single_independent_running_dma {
+        ($Adc:ident, $dma_chan:ty) => {
+            impl<'seq, 'body, 'scope> $Adc<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>> {
+                /// Waits for the DMA transfer to finish.
+                pub fn wait(self) -> (
+                    $Adc<Independent, WithSequence<'seq>>,
+                    $dma_chan,
+                    ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+                    &'scope mut [u16],
+                )
+                {
+                    // Wait for DMA transfer to finish.
+                    let (chan, mut guard, buf) = self._state._transfer.wait();
+                    // The hardware should automatically stop the ADC. This loop is in case it
+                    // takes a little while to stop the ADC after the DMA transfer has completed.
+                    // (The reference manual does not specify whether this is necessary.)
+                    while self.reg.cr.read().adstart().bit_is_set() {}
+                    // Disable generation of DMA requests.
+                    self.reg.cfgr.modify(|_, w| w.dmaen().clear_bit());
+                    // Remove guard handler.
+                    if let Some(handler) = guard.handler_mut() {
+                        handler.set_periph(None);
+                    }
+                    // There should never be an overrun in auto-delayed mode.
+                    debug_assert!(self.reg.isr.read().ovr().bit_is_clear());
+                    (
+                        $Adc {
+                            clock_freq: self.clock_freq,
+                            reg: self.reg,
+                            pair_state: self.pair_state,
+                            _state: WithSequence {
+                                life: PhantomData,
+                            },
+                        },
+                        chan,
+                        guard,
+                        buf,
+                    )
+                }
+            }
+        };
+    }
+    impl_single_independent_running_dma!(Adc1, dma::dma1::Channel1);
+    impl_single_independent_running_dma!(Adc2, dma::dma2::Channel1);
 
     /// ADC1 and ADC2 channels.
     pub mod channels {

@@ -3,20 +3,71 @@
 // This should be true for all STM32 devices.
 #![cfg(target_pointer_width = "32")]
 
-// TODO: It should be possible to borrow the channel for `'data` instead of taking ownership.
-
 use core::sync::atomic;
 use rcc::AHB;
-use strong_scope_guard::ScopeGuard;
+use strong_scope_guard::{ScopeEndHandler, ScopeGuard};
 
 /// An ongoing DMA transfer.
 ///
 /// The lifetimes `'body` and `'data` are from the `ScopeGuard` protecting the
 /// source and destination data buffers.
-pub struct Transfer<'body, 'data: 'body, Channel, OutBuf> {
-    guard: ScopeGuard<'body, 'data, fn()>,
+pub struct Transfer<'body, 'data, Channel, OutBuf, Handler>
+where
+    'data: 'body,
+    Handler: ScopeEndHandler + 'body,
+{
+    guard: ScopeGuard<'body, 'data, Handler>,
     channel: Channel,
     out_buf: OutBuf,
+}
+
+/// `ScopeGuard` handler for a DMA transfer.
+///
+/// `H` is the peripheral's handler if the transfer is to/from a peripheral.
+///
+/// When this handler is called, it executes the following two steps in order:
+///
+/// 1. Wait until the end of the DMA transfer, then disable the DMA channel.
+/// 2. Call the peripheral handler.
+pub struct WaitHandler<H: ScopeEndHandler> {
+    periph: H,
+    dma: Option<unsafe fn()>,
+}
+
+impl<H: ScopeEndHandler> WaitHandler<H> {
+    /// Sets the peripheral handler.
+    pub(crate) fn set_periph(&mut self, handler: H) {
+        self.periph = handler
+    }
+}
+
+impl<H: ScopeEndHandler> ScopeEndHandler for WaitHandler<H> {
+    fn none() -> Self {
+        WaitHandler {
+            periph: H::none(),
+            dma: None,
+        }
+    }
+
+    fn call(self) {
+        if let Some(f) = self.dma {
+            unsafe { (f)() }
+        }
+        self.periph.call();
+    }
+}
+
+/// A scope guard handler that contains a DMA handler.
+pub trait DmaHandler: ScopeEndHandler {
+    /// Disables the DMA-related portion of the handler.
+    #[doc(hidden)]
+    fn disable_dma_handler(&mut self);
+}
+
+impl<H: ScopeEndHandler> DmaHandler for WaitHandler<H> {
+    fn disable_dma_handler(&mut self) {
+        self.dma = None;
+    }
 }
 
 /// Extension trait to split the DMA block into independent channels.
@@ -244,10 +295,64 @@ macro_rules! dma {
                 }
 
                 impl $Channeli {
+                    /// Waits for the ongoing transfer to complete and disables the channel.
+                    ///
+                    /// This function is intended only for use in `ScopeGuard` handlers.
+                    ///
+                    /// This is unsafe because it modifies the DMA channel without borrowing the
+                    /// channel token. The caller must ensure that (1) the DMA channel cannot be
+                    /// modified concurrently with the call to this function, (2) the DMA channel
+                    /// is currently enabled, and (3) no `Transfer` instances with this cahnnel
+                    /// are accessible after this function is called.
+                    unsafe fn wait_unchecked() {
+                        let reg = &(*$DMAx::ptr());
+                        let mut isr = reg.isr.read();
+                        // Wait for transfer error or transfer complete.
+                        while isr.$teifi().bit_is_clear() && isr.$tcifi().bit_is_clear() {
+                            isr = reg.isr.read();
+                        }
+
+                        // Ensure that the compiler does not try to use old values from the memory
+                        // buffers.
+                        atomic::compiler_fence(atomic::Ordering::SeqCst);
+
+                        if isr.$teifi().bit_is_set() {
+                            // The hardware automatically disables the channel in the error case.
+                            debug_assert!(reg.$ccri.read().en().bit_is_clear());
+                            panic!("DMA transfer error for channel {:?}", stringify!($Channeli));
+                        }
+                        reg.$ccri.modify(|_, w| w.en().clear_bit());
+                    }
+
+                    // /// Immediately disables the channel.
+                    // ///
+                    // /// This function is intended only for use in `ScopeGuard` handlers.
+                    // ///
+                    // /// This is unsafe because it modifies the DMA channel without borrowing the
+                    // /// channel token. The caller must ensure that (1) the DMA channel cannot be
+                    // /// modified concurrently with the call to this function, (2) the DMA channel
+                    // /// is currently enabled, and (3) no `Transfer` instances with this cahnnel
+                    // /// are accessible after this function is called.
+                    // unsafe fn disable_unchecked() {
+                    //     let reg = &(*$DMAx::ptr());
+                    //     reg.$ccri.modify(|_, w| w.en().clear_bit());
+
+                    //     // Ensure that the compiler does not try to use old values from the memory
+                    //     // buffers.
+                    //     atomic::compiler_fence(atomic::Ordering::SeqCst);
+
+                    //     if reg.isr.read().$teifi().bit_is_set() {
+                    //         panic!("DMA transfer error for channel {:?}", stringify!($Channeli));
+                    //     }
+                    // }
+
                     /// Enables a DMA transfer from a peripheral register to a memory buffer with
                     /// circular mode disabled.
                     ///
                     /// The number of data to be transferred is `mem.len()`.
+                    ///
+                    /// The peripheral should add its handler to the `ScopeGuard` before passing
+                    /// the guard to this method.
                     ///
                     /// This method is unsafe because it causes the DMA to read from the memory
                     /// located at the `periph` raw pointer. The caller must ensure that the DMA
@@ -259,15 +364,16 @@ macro_rules! dma {
                     /// **Warning**: If `periph` is not actually a peripheral register, then this
                     /// transfer will never finish because the DMA will never receive any transfer
                     /// requests.
-                    pub(crate) unsafe fn enable_periph_to_mem<'body, 'data, P, M>(
+                    pub(crate) unsafe fn enable_periph_to_mem<'body, 'data, P, M, H>(
                         mut self,
-                        mut guard: ScopeGuard<'body, 'data, fn()>,
+                        mut guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
                         periph: *const P,
                         mem: &'data mut [M],
-                    ) -> Transfer<'body, 'data, Self, &'data mut [M]>
+                    ) -> Transfer<'body, 'data, Self, &'data mut [M], WaitHandler<H>>
                     where
                         P: DataElem,
                         M: DataElem + FromBits<P>,
+                        H: ScopeEndHandler,
                     {
                         self.clear_all_flags();
                         self.cpar_mut().write(|w| w.pa().bits(periph as u32));
@@ -287,23 +393,25 @@ macro_rules! dma {
                             w.mem2mem().clear_bit()
                         });
 
-                        // Set up the guard to disable the transfer before `mem` goes out of scope.
-                        guard.assign_handler(Some(|| {
-                            // This is safe and we don't have to worry about concurrent access to
-                            // the register because:
-                            //
-                            // 1. The channel has exclusive access to its register.
-                            //
-                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
-                            //    the closure cannot not called while the `Transfer` is alive, so
-                            //    the `Transfer` instance cannot access the register concurrently
-                            //    with this closure.
-                            //
-                            // 3. The closure is disabled before returning the channel in
-                            //    `.wait()`, so the `$Channeli` instance cannot access the register
-                            //    concurrently with this closure.
-                            (*$DMAx::ptr()).$ccri.modify(|_, w| w.en().clear_bit());
-                        }));
+                        // Set up the guard to wait for the transfer to complete and disable the
+                        // channel before `mem` goes out of scope.
+                        //
+                        // This is safe and we don't have to worry about concurrent access to
+                        // the register because:
+                        //
+                        // 1. The channel has exclusive access to its register.
+                        //
+                        // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
+                        //    the handler cannot not called while the `Transfer` is alive, so
+                        //    the `Transfer` instance cannot access the register concurrently
+                        //    with this handler.
+                        //
+                        // 3. The handler is disabled before returning the channel in
+                        //    `.wait()`, so the `$Channeli` instance cannot access the register
+                        //    concurrently with this handler.
+                        if let Some(handler) = guard.handler_mut() {
+                            handler.dma = Some($Channeli::wait_unchecked);
+                        }
 
                         // Ensure that all reads from `mem` have completed before enabling the
                         // transfer.
@@ -322,6 +430,9 @@ macro_rules! dma {
                     ///
                     /// The number of data to be transferred is `mem.len()`.
                     ///
+                    /// The peripheral should add its handler to the `ScopeGuard` before passing
+                    /// the guard to this method.
+                    ///
                     /// This method is unsafe because it causes the DMA to write to the memory
                     /// located at the `periph` raw pointer. The caller must ensure that the DMA
                     /// can write to this location until the `'data` lifetime ends or until the DMA
@@ -332,15 +443,16 @@ macro_rules! dma {
                     /// **Warning**: If `periph` is not actually a peripheral register, then this
                     /// transfer will never finish because the DMA will never receive any transfer
                     /// requests.
-                    pub(crate) unsafe fn enable_mem_to_periph<'body, 'data, M, P>(
+                    pub(crate) unsafe fn enable_mem_to_periph<'body, 'data, M, P, H>(
                         mut self,
-                        mut guard: ScopeGuard<'body, 'data, fn()>,
+                        mut guard: ScopeGuard<'body, 'data, WaitHandler<H>>,
                         mem: &'data [M],
                         periph: *mut P,
-                    ) -> Transfer<'body, 'data, Self, ()>
+                    ) -> Transfer<'body, 'data, Self, (), WaitHandler<H>>
                     where
                         P: DataElem,
                         M: DataElem + FromBits<P>,
+                        H: ScopeEndHandler,
                     {
                         self.clear_all_flags();
                         self.cpar_mut().write(|w| w.pa().bits(periph as u32));
@@ -360,23 +472,25 @@ macro_rules! dma {
                             w.mem2mem().clear_bit()
                         });
 
-                        // Set up the guard to disable the transfer before `mem` goes out of scope.
-                        guard.assign_handler(Some(|| {
-                            // This is safe and we don't have to worry about concurrent access to
-                            // the register because:
-                            //
-                            // 1. The channel has exclusive access to its register.
-                            //
-                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
-                            //    the closure cannot not called while the `Transfer` is alive, so
-                            //    the `Transfer` instance cannot access the register concurrently
-                            //    with this closure.
-                            //
-                            // 3. The closure is disabled before returning the channel in
-                            //    `.wait()`, so the `$Channeli` instance cannot access the register
-                            //    concurrently with this closure.
-                            (*$DMAx::ptr()).$ccri.modify(|_, w| w.en().clear_bit());
-                        }));
+                        // Set up the guard to wait for the transfer to complete and disable the
+                        // channel before `mem` goes out of scope.
+                        //
+                        // This is safe and we don't have to worry about concurrent access to
+                        // the register because:
+                        //
+                        // 1. The channel has exclusive access to its register.
+                        //
+                        // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
+                        //    the handler cannot not called while the `Transfer` is alive, so
+                        //    the `Transfer` instance cannot access the register concurrently
+                        //    with this handler.
+                        //
+                        // 3. The handler is disabled before returning the channel in
+                        //    `.wait()`, so the `$Channeli` instance cannot access the register
+                        //    concurrently with this handler.
+                        if let Some(handler) = guard.handler_mut() {
+                            handler.dma = Some($Channeli::wait_unchecked);
+                        }
 
                         // Ensure that all writes to `mem` have completed before enabling the
                         // transfer.
@@ -397,10 +511,10 @@ macro_rules! dma {
                     /// dst.len()`.
                     pub fn start_mem_to_mem<'body, 'data, S, D>(
                         mut self,
-                        mut guard: ScopeGuard<'body, 'data, fn()>,
+                        mut guard: ScopeGuard<'body, 'data, WaitHandler<()>>,
                         src: &'data [S],
                         dst: &'data mut [D],
-                    ) -> Transfer<'body, 'data, Self, &'data mut [D]>
+                    ) -> Transfer<'body, 'data, Self, &'data mut [D], WaitHandler<()>>
                     where
                         S: DataElem,
                         D: DataElem + FromBits<S>,
@@ -429,24 +543,25 @@ macro_rules! dma {
                             w.mem2mem().set_bit()
                         });
 
-                        // Set up the guard to disable the transfer before `src` and `dest` go out
-                        // of scope.
-                        guard.assign_handler(Some(|| {
-                            // This is safe and we don't have to worry about concurrent access to
-                            // the register because:
-                            //
-                            // 1. The channel has exclusive access to its register.
-                            //
-                            // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`,
-                            //    the closure cannot not called while the `Transfer` is alive, so
-                            //    the `Transfer` instance cannot access the register concurrently
-                            //    with this closure.
-                            //
-                            // 3. The closure is disabled before returning the channel in
-                            //    `.wait()`, so the `$Channeli` instance cannot access the register
-                            //    concurrently with this closure.
-                            unsafe { &(*$DMAx::ptr()).$ccri }.modify(|_, w| w.en().clear_bit());
-                        }));
+                        // Set up the guard to wait for the transfer to complete and disable the
+                        // channel before the borrows of `src` and `dest` go out of scope.
+                        //
+                        // This is safe and we don't have to worry about concurrent access to the
+                        // register because:
+                        //
+                        // 1. The channel has exclusive access to its register.
+                        //
+                        // 2. Since `Transfer` has the `'body` lifetime from the `ScopeGuard`, the
+                        //    handler cannot not called while the `Transfer` is alive, so the
+                        //    `Transfer` instance cannot access the register concurrently with this
+                        //    handler.
+                        //
+                        // 3. The handler is disabled before returning the channel in `.wait()`, so
+                        //    the `$Channeli` instance cannot access the register concurrently with
+                        //    this handler.
+                        if let Some(handler) = guard.handler_mut() {
+                            handler.dma = Some($Channeli::wait_unchecked);
+                        }
 
                         // Ensure that all writes to `src` and all reads from `dst` have completed
                         // before enabling the transfer.
@@ -461,26 +576,30 @@ macro_rules! dma {
                     }
                 }
 
-                impl<'body, 'data, OutBuf> Transfer<'body, 'data, $Channeli, OutBuf> {
+                impl<'body, 'data, OutBuf, Handler> Transfer<'body, 'data, $Channeli, OutBuf, Handler>
+                where
+                    Handler: DmaHandler,
+                {
                     /// Returns `true` iff the transfer is complete or there was a fatal error.
                     pub fn is_done(&self) -> bool {
                         self.channel.transfer_error() || self.channel.transfer_complete()
                     }
 
-                    // TODO: return the mutable buffer (because &'static mut things are difficult to work with)
                     /// Waits for the DMA transfer to finish (blocking).
                     ///
                     /// **Panics** if there was a transfer error. (This occurs when a DMA transfer
                     /// is attempted to/from a reserved address space. This can happen if the stack
                     /// is configured to be in CCM RAM and a DMA transfer is attempted to/from a
                     /// stack-allocated buffer, since the DMA cannot access CCM RAM.)
-                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>, OutBuf) {
+                    pub fn wait(self) -> ($Channeli, ScopeGuard<'body, 'data, Handler>, OutBuf) {
                         let Transfer { mut guard, mut channel, out_buf } = self;
 
                         while !channel.transfer_error() && !channel.transfer_complete() {}
 
-                        // Disable guard handler.
-                        guard.assign_handler(None);
+                        // Disable DMA portion of guard handler.
+                        if let Some(handler) = guard.handler_mut() {
+                            handler.disable_dma_handler();
+                        }
 
                         // Ensure that the compiler does not try to use previously-read values from
                         // `dst` instead of reading the new values written by the DMA transfer.
@@ -497,10 +616,12 @@ macro_rules! dma {
                     }
 
                     /// Disables the DMA transfer without waiting for it to finish.
-                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, fn()>, OutBuf) {
+                    pub fn disable(self) -> ($Channeli, ScopeGuard<'body, 'data, Handler>, OutBuf) {
                         let Transfer { mut guard, mut channel, out_buf } = self;
                         channel.ccr_mut().modify(|_, w| w.en().clear_bit());
-                        guard.assign_handler(None);
+                        if let Some(handler) = guard.handler_mut() {
+                            handler.disable_dma_handler();
+                        }
                         atomic::compiler_fence(atomic::Ordering::SeqCst);
                         (channel, guard, out_buf)
                     }
