@@ -34,14 +34,17 @@ fn main() -> ! {
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
     let mut delay = Delay::new(core_periph.SYST, clocks);
 
-    let dma1::Parts{ chan1: mut dma1_chan1, .. } = stm32_periph.DMA1.split(&mut rcc.ahb);
+    let dma1::Parts {
+        chan1: mut dma1_chan1,
+        ..
+    } = stm32_periph.DMA1.split(&mut rcc.ahb);
     let mut gpioa = stm32_periph.GPIOA.split(&mut rcc.ahb);
     let pa0 = gpioa.pa0.into_analog(&mut gpioa.moder);
     let (unpowered_adc12, adc12_channels) =
         stm32_periph
             .ADC1_2
             .split(stm32_periph.ADC1, stm32_periph.ADC2, &mut rcc.ahb, clocks);
-    let adc12 = unpowered_adc12.map_adc1(|unpowered| {
+    let mut adc12 = unpowered_adc12.map_adc1(|unpowered| {
         let mut disabled = unpowered.power_on(&mut delay);
         disabled.calibrate_single_ended(&mut delay);
         let mut enabled = disabled.enable();
@@ -56,11 +59,11 @@ fn main() -> ! {
     iprintln!(&mut itm.stim[0], "buf (before) = {:?}", buf);
     let _adc12 = scope!(|guard| {
         dma1_chan1.set_priority(Priority::VeryHigh);
-        let adc12 = adc12.map_adc1(|adc1| adc1.start_dma(&mut buf, guard, dma1_chan1));
-        // adc12.map_adc1(|adc1| {
-        //     let (adc1, _dma1_chan1, _guard, _buf) = adc1.wait();
-        //     adc1
-        // });
+        let running = adc12.adc1.start_dma(&mut buf, guard, dma1_chan1);
+        // Can do other things here while the ADC and DMA are running.
+        let (stopped, _, _, _) = running.wait();
+        adc12.adc1 = stopped;
+        adc12
     });
     iprintln!(&mut itm.stim[0], "buf (after) = {:?}", buf);
 
