@@ -179,8 +179,10 @@ pub mod adc12 {
     /// ADC1 and ADC2 pair.
     pub struct Adc12<PairState, Adc1State, Adc2State> {
         reg: stm32f30x::ADC1_2,
-        adc1: Adc1<PairState, Adc1State>,
-        adc2: Adc2<PairState, Adc2State>,
+        /// ADC1.
+        pub adc1: Adc1<PairState, Adc1State>,
+        /// ADC2.
+        pub adc2: Adc2<PairState, Adc2State>,
     }
 
     /// ADC1 wrapper.
