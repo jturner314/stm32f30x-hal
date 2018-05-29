@@ -39,6 +39,22 @@ pub struct RunningDma<'seq: 'scope, 'body, 'scope: 'body, Channel> {
     transfer:
         dma::Transfer<'body, 'scope, Channel, &'scope mut [u16], dma::WaitHandler<Option<fn()>>>,
 }
+/// The master ADC is running with DMA.
+pub struct RunningDmaMaster<'seq: 'scope, 'body, 'scope: 'body, Channel> {
+    seq: PhantomData<&'seq ()>,
+    transfer: dma::Transfer<
+        'body,
+        'scope,
+        Channel,
+        &'scope mut [[u16; 2]],
+        dma::WaitHandler<Option<fn()>>,
+    >,
+}
+/// The slave ADC is running with DMA.
+pub struct RunningDmaSlave<'seq: 'scope, 'body, 'scope: 'body> {
+    seq: PhantomData<&'seq ()>,
+    body: PhantomData<&'body ()>,
+    scope: PhantomData<&'scope ()>,
 }
 
 /// ADCs in pair are in independent mode.
@@ -543,6 +559,172 @@ pub mod adc12 {
             }
 
             out
+        }
+
+        /// Sets the ADCs to continuous conversion mode with auto-delay;
+        /// configures and enables the DMA channel for writing into the
+        /// buffer in one shot mode; and starts the regular sequence.
+        ///
+        /// This method uses dual-DMA mode (`MDMA = 0b10`) so that only a
+        /// single DMA channel is necessary.
+        ///
+        /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
+        /// overruns.
+        pub fn start_dma<'body, 'scope, D>(
+            self,
+            buf: &'scope mut [[u16; 2]],
+            mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+            dma: D,
+        ) -> Adc12<
+            Dual,
+            RunningDmaMaster<'seq1, 'body, 'scope, D::Channel>,
+            RunningDmaSlave<'seq2, 'body, 'scope>,
+        >
+        where
+            'seq1: 'scope,
+            'seq2: 'scope,
+            D: AdcDmaTokens<'scope, Adc1<Dual, WithSequence<'seq1>>>,
+        {
+            debug_assert!(self.adc1.reg.cr.read().aden().bit_is_set());
+            debug_assert!(self.adc1.reg.cr.read().addis().bit_is_clear());
+            debug_assert!(self.adc1.reg.cr.read().adstart().bit_is_clear());
+            debug_assert!(self.adc1.reg.cfgr.read().dmaen().bit_is_clear());
+            debug_assert!(self.adc2.reg.cfgr.read().dmaen().bit_is_clear());
+
+            // Set the master ADC to continuous conversion mode with auto-delay.
+            self.adc1.reg.cfgr.modify(|_, w| {
+                w.cont().set_bit();
+                w.autdly().set_bit()
+            });
+            // Clear the MDMA bits to reset any pending DMA requests from this
+            // ADC pair.
+            self.reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+            // Clear overrun, end-of-conversion, and end-of-sequence flags.
+            self.adc1.reg.isr.write(|w| {
+                w.ovr().set_bit();
+                w.eoc().set_bit();
+                w.eos().set_bit()
+            });
+
+            // Set up the guard to wait for the ADCs to finish and disable generation of DMA
+            // requests after the DMA transfer has completed.
+            if let Some(handler) = guard.handler_mut() {
+                handler.set_periph(Some(|| {
+                    // This is safe and we don't have to worry about concurrent access to the
+                    // register because:
+                    //
+                    // 1. The ADC has exclusive access to its register.
+                    //
+                    // 2. Since the running ADC has the `'body` lifetime from the `ScopeGuard`,
+                    //    the closure cannot not called while the running ADC is alive, so the
+                    //    running ADC cannot access the register concurrently with this
+                    //    closure.
+                    //
+                    // 3. The closure is disabled before returning the non-running ADC, so the
+                    //    non-running ADC cannot access the register with this
+                    //    closure.
+                    let adc1_reg = unsafe { &(*stm32f30x::ADC1::ptr()) };
+                    let adc12_reg = unsafe { &(*stm32f30x::ADC1_2::ptr()) };
+                    // The hardware should automatically stop the ADC after the DMA
+                    // transfer has completed. This loop is in case it takes the hardware a
+                    // little while to stop the ADC. (The reference manual does not specify
+                    // whether this is necessary.)
+                    while adc1_reg.cr.read().adstart().bit_is_set() {}
+                    // Disable generation of DMA requests.
+                    adc12_reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+                }));
+            }
+
+            // Configure and enable the DMA transfer.
+            self.reg.ccr.modify(|_, w| {
+                unsafe { w.mdma().bits(0b10) };
+                w.dmacfg().clear_bit() // one-shot mode
+            });
+            let data_reg = &(*self.reg).cdr as *const _ as *const [u16; 2];
+            let transfer = unsafe { dma.channel().enable_periph_to_mem(guard, data_reg, buf) };
+
+            self.adc1.reg.cr.modify(|_, w| w.adstart().set_bit());
+            Adc12 {
+                reg: self.reg,
+                adc1: Adc1 {
+                    clock_freq: self.adc1.clock_freq,
+                    reg: self.adc1.reg,
+                    pair_state: self.adc1.pair_state,
+                    state: RunningDmaMaster {
+                        seq: self.adc1.state.life,
+                        transfer,
+                    },
+                },
+                adc2: Adc2 {
+                    clock_freq: self.adc2.clock_freq,
+                    reg: self.adc2.reg,
+                    pair_state: self.adc2.pair_state,
+                    state: RunningDmaSlave {
+                        seq: self.adc2.state.life,
+                        body: PhantomData,
+                        scope: PhantomData,
+                    },
+                },
+            }
+        }
+    }
+
+    impl<'seq1, 'seq2, 'body, 'scope, Channel>
+        Adc12<
+            Dual,
+            RunningDmaMaster<'seq1, 'body, 'scope, Channel>,
+            RunningDmaSlave<'seq2, 'body, 'scope>,
+        > where
+        Channel: dma::DmaChannel,
+    {
+        /// Waits for the DMA transfer to finish.
+        pub fn wait(
+            self,
+        ) -> (
+            Adc12<Dual, WithSequence<'seq1>, WithSequence<'seq2>>,
+            Channel,
+            ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+            &'scope mut [[u16; 2]],
+        ) {
+            // Wait for DMA transfer to finish.
+            let (chan, mut guard, buf) = self.adc1.state.transfer.wait();
+            // The hardware should automatically stop the ADCs. This loop is in
+            // case it takes a little while to stop the ADCs after the DMA
+            // transfer has completed. (The reference manual does not specify
+            // whether this is necessary.)
+            while self.adc1.reg.cr.read().adstart().bit_is_set() {}
+            // Disable generation of DMA requests.
+            self.reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+            // Remove guard handler.
+            if let Some(handler) = guard.handler_mut() {
+                handler.set_periph(None);
+            }
+            // There should never be an overrun in auto-delayed mode.
+            debug_assert!(self.adc1.reg.isr.read().ovr().bit_is_clear());
+            (
+                Adc12 {
+                    reg: self.reg,
+                    adc1: Adc1 {
+                        clock_freq: self.adc1.clock_freq,
+                        reg: self.adc1.reg,
+                        pair_state: self.adc1.pair_state,
+                        state: WithSequence {
+                            life: self.adc1.state.seq,
+                        },
+                    },
+                    adc2: Adc2 {
+                        clock_freq: self.adc2.clock_freq,
+                        reg: self.adc2.reg,
+                        pair_state: self.adc2.pair_state,
+                        state: WithSequence {
+                            life: self.adc2.state.seq,
+                        },
+                    },
+                },
+                chan,
+                guard,
+                buf,
+            )
         }
     }
 
