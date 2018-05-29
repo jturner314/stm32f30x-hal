@@ -266,16 +266,6 @@ pub mod adc12 {
             self.adc1.clock_freq
         }
 
-        /// Returns a reference to ADC1.
-        pub fn adc1(&self) -> &Adc1<PairState, Adc1State> {
-            &self.adc1
-        }
-
-        /// Returns a mutable reference to ADC1.
-        pub fn adc1_mut(&mut self) -> &mut Adc1<PairState, Adc1State> {
-            &mut self.adc1
-        }
-
         /// Map ADC1. (This allows changing its state.)
         pub fn map_adc1<F, S>(self, f: F) -> Adc12<PairState, S, Adc2State>
         where
@@ -286,16 +276,6 @@ pub mod adc12 {
                 adc1: f(self.adc1),
                 adc2: self.adc2,
             }
-        }
-
-        /// Returns a reference to ADC2.
-        pub fn adc2(&self) -> &Adc2<PairState, Adc2State> {
-            &self.adc2
-        }
-
-        /// Returns a mutable reference to ADC2.
-        pub fn adc2_mut(&mut self) -> &mut Adc2<PairState, Adc2State> {
-            &mut self.adc2
         }
 
         /// Map ADC2. (This allows changing its state.)
