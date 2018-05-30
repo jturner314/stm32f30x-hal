@@ -1246,6 +1246,173 @@ macro_rules! impl_channel_from_pins {
     };
 }
 
+macro_rules! impl_channel_conversions {
+    ($Pair:ident, $pos:ident, $neg:ident, [$(($adc:ident, $channel_num:expr)),*]) => {
+        impl $pos<SingleEnded> {
+            /// Changes the channel to differential mode, where `self` is the
+            /// positive input and `_neg` is the negative input.
+            pub fn into_differential<P>(
+                self,
+                _neg: $neg<SingleEnded>,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> $pos<Differential> {
+                $(
+                    pair.$adc.reg.difsel.modify(|r, w| unsafe {
+                        w.difsel_1_15()
+                            .bits(r.difsel_1_15().bits() | (1 << $channel_num))
+                    });
+                )*
+                    $pos {
+                        _state: PhantomData,
+                    }
+            }
+        }
+
+        impl $pos<Differential> {
+            /// Changes the channel to single-ended mode.
+            pub fn into_single_ended<P>(
+                self,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> ($pos<SingleEnded>, $neg<SingleEnded>) {
+                $(
+                    pair.$adc.reg.difsel.modify(|r, w| unsafe {
+                        w.difsel_1_15()
+                            .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
+                    });
+                )*
+                    (
+                        $pos {
+                            _state: PhantomData,
+                        },
+                        $neg {
+                            _state: PhantomData,
+                        },
+                    )
+            }
+        }
+    };
+}
+
+macro_rules! impl_channel_conversions_shared_neg {
+    (
+        ($Pair:ident, $master:ident, $slave:ident),
+        $this_adc:ident,
+        $this_pos:ident,
+        $other_pos:ident,
+        $neg:ident,
+        $channel_num:expr
+    ) => {
+        impl $this_pos<SingleEnded> {
+            /// Changes the channel to differential mode, where `self` is the
+            /// positive input and `_neg` is the negative input.
+            pub fn into_differential<P>(
+                self,
+                _neg: $neg<SingleEnded>,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> $this_pos<Differential> {
+                pair.$this_adc.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
+                });
+                $this_pos {
+                    _state: PhantomData,
+                }
+            }
+        }
+
+        impl $this_pos<Differential> {
+            /// Changes the channel to single-ended mode.
+            ///
+            /// It is necessary to pass a reference to the other channel in single-ended mode
+            /// that shares this channel's negative input. Otherwise, it would be possible to
+            /// convert both into differential mode with `.both_into_differential()`, and then
+            /// individually convert them back to single-ended mode with `.into_single_ended()`
+            /// to get two copies of the negative input.
+            pub fn into_single_ended<P>(
+                self,
+                _other_pos: &$other_pos<SingleEnded>,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> ($this_pos<SingleEnded>, $neg<SingleEnded>) {
+                pair.$this_adc.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
+                });
+                (
+                    $this_pos {
+                        _state: PhantomData,
+                    },
+                    $neg {
+                        _state: PhantomData,
+                    },
+                )
+            }
+        }
+
+        impl $this_pos<SingleEnded> {
+            /// Changes the channels to differential mode, where `self` and
+            /// `_other_pos` are the positive inputs and `_neg` is the negative
+            /// input.
+            pub fn both_into_differential<P>(
+                self,
+                _other_pos: $other_pos<SingleEnded>,
+                _neg: $neg<SingleEnded>,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> ($this_pos<Differential>, $other_pos<Differential>) {
+                pair.$master.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
+                });
+                pair.$slave.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
+                });
+                (
+                    $this_pos {
+                        _state: PhantomData,
+                    },
+                    $other_pos {
+                        _state: PhantomData,
+                    },
+                )
+            }
+        }
+
+        impl $this_pos<Differential> {
+            /// Changes the channels to single-ended mode.
+            pub fn both_into_single_ended<P>(
+                self,
+                _other: $other_pos<Differential>,
+                pair: &mut $Pair<P, Disabled, Disabled>,
+            ) -> (
+                ($this_pos<SingleEnded>, $other_pos<SingleEnded>),
+                $neg<SingleEnded>,
+            ) {
+                pair.$master.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
+                });
+                pair.$slave.reg.difsel.modify(|r, w| unsafe {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
+                });
+                (
+                    (
+                        $this_pos {
+                            _state: PhantomData,
+                        },
+                        $other_pos {
+                            _state: PhantomData,
+                        },
+                    ),
+                    $neg {
+                        _state: PhantomData,
+                    },
+                )
+            }
+        }
+    };
+}
+
 /// Master/slave ADC pair.
 pub trait AdcPair {
     /// The type of the master ADC in the pair.

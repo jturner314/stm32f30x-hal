@@ -232,7 +232,6 @@ pub mod channels {
         }
     }
 
-
     /// Battery voltage sensor (V_BAT/2).
     ///
     /// An instance of this type can be obtained from the
@@ -760,75 +759,28 @@ pub mod channels {
         _state: PhantomData<S>,
     }
 
-    macro_rules! impl_channel_conversions {
-            ($pos:ident, $neg:ident, [$(($adc:ident, $channel_num:expr)),*]) => {
-                impl $pos<SingleEnded> {
-                    /// Changes the channel to differential mode, where `self` is the
-                    /// positive input and `_neg` is the negative input.
-                    pub fn into_differential<P>(
-                        self,
-                        _neg: $neg<SingleEnded>,
-                        adc12: &mut Adc12<P, Disabled, Disabled>,
-                    ) -> $pos<Differential> {
-                        $(
-                            adc12.$adc.reg.difsel.modify(|r, w| unsafe {
-                                w.difsel_1_15()
-                                    .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                            });
-                        )*
-                            $pos {
-                                _state: PhantomData,
-                            }
-                    }
-                }
+    impl_channel_conversions!(Adc12, Adc1In1, Adc1In2, [(adc1, 1)]);
+    impl_channel_conversions!(Adc12, Adc1In2, Adc1In3, [(adc1, 2)]);
+    impl_channel_conversions!(Adc12, Adc1In3, Adc1In4, [(adc1, 3)]);
+    impl_channel_conversions!(Adc12, Adc1In4, Adc1In5, [(adc1, 4)]);
+    impl_channel_conversions_shared_neg!((Adc12, adc1, adc2), adc1, Adc1In5, Adc2In5, Adc12In6, 5);
+    impl_channel_conversions!(Adc12, Adc1In11, Adc1In12, [(adc1, 11)]);
+    impl_channel_conversions!(Adc12, Adc1In12, Adc1In13, [(adc1, 12)]);
 
-                impl $pos<Differential> {
-                    /// Changes the channel to single-ended mode.
-                    pub fn into_single_ended<P>(
-                        self,
-                        adc12: &mut Adc12<P, Disabled, Disabled>,
-                    ) -> ($pos<SingleEnded>, $neg<SingleEnded>) {
-                        $(
-                            adc12.$adc.reg.difsel.modify(|r, w| unsafe {
-                                w.difsel_1_15()
-                                    .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                            });
-                        )*
-                            (
-                                $pos {
-                                    _state: PhantomData,
-                                },
-                                $neg {
-                                    _state: PhantomData,
-                                },
-                            )
-                    }
-                }
-            };
-        }
+    impl_channel_conversions!(Adc12, Adc2In1, Adc2In2, [(adc2, 1)]);
+    impl_channel_conversions!(Adc12, Adc2In2, Adc2In3, [(adc2, 2)]);
+    impl_channel_conversions!(Adc12, Adc2In3, Adc2In4, [(adc2, 3)]);
+    impl_channel_conversions!(Adc12, Adc2In4, Adc2In5, [(adc2, 4)]);
+    impl_channel_conversions_shared_neg!((Adc12, adc1, adc2), adc2, Adc2In5, Adc1In5, Adc12In6, 5);
+    impl_channel_conversions!(Adc12, Adc2In11, Adc2In12, [(adc2, 11)]);
+    impl_channel_conversions!(Adc12, Adc2In12, Adc2In13, [(adc2, 12)]);
+    impl_channel_conversions!(Adc12, Adc2In13, Adc2In14, [(adc2, 13)]);
+    impl_channel_conversions!(Adc12, Adc2In14, Adc2In15, [(adc2, 14)]);
 
-    impl_channel_conversions!(Adc1In1, Adc1In2, [(adc1, 1)]);
-    impl_channel_conversions!(Adc1In2, Adc1In3, [(adc1, 2)]);
-    impl_channel_conversions!(Adc1In3, Adc1In4, [(adc1, 3)]);
-    impl_channel_conversions!(Adc1In4, Adc1In5, [(adc1, 4)]);
-    impl_channel_conversions!(Adc1In5, Adc12In6, [(adc1, 5)]);
-    impl_channel_conversions!(Adc1In11, Adc1In12, [(adc1, 11)]);
-    impl_channel_conversions!(Adc1In12, Adc1In13, [(adc1, 12)]);
-
-    impl_channel_conversions!(Adc2In1, Adc2In2, [(adc2, 1)]);
-    impl_channel_conversions!(Adc2In2, Adc2In3, [(adc2, 2)]);
-    impl_channel_conversions!(Adc2In3, Adc2In4, [(adc2, 3)]);
-    impl_channel_conversions!(Adc2In4, Adc2In5, [(adc2, 4)]);
-    impl_channel_conversions!(Adc2In5, Adc12In6, [(adc2, 5)]);
-    impl_channel_conversions!(Adc2In11, Adc2In12, [(adc2, 11)]);
-    impl_channel_conversions!(Adc2In12, Adc2In13, [(adc2, 12)]);
-    impl_channel_conversions!(Adc2In13, Adc2In14, [(adc2, 13)]);
-    impl_channel_conversions!(Adc2In14, Adc2In15, [(adc2, 14)]);
-
-    impl_channel_conversions!(Adc12In6, Adc12In7, [(adc1, 6), (adc2, 6)]);
-    impl_channel_conversions!(Adc12In7, Adc12In8, [(adc1, 7), (adc2, 7)]);
-    impl_channel_conversions!(Adc12In8, Adc12In9, [(adc1, 8), (adc2, 8)]);
-    impl_channel_conversions!(Adc12In9, Adc12In10, [(adc1, 9), (adc2, 9)]);
+    impl_channel_conversions!(Adc12, Adc12In6, Adc12In7, [(adc1, 6), (adc2, 6)]);
+    impl_channel_conversions!(Adc12, Adc12In7, Adc12In8, [(adc1, 7), (adc2, 7)]);
+    impl_channel_conversions!(Adc12, Adc12In8, Adc12In9, [(adc1, 8), (adc2, 8)]);
+    impl_channel_conversions!(Adc12, Adc12In9, Adc12In10, [(adc1, 9), (adc2, 9)]);
 
     impl Adc12In10<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -886,73 +838,4 @@ pub mod channels {
             )
         }
     }
-
-    macro_rules! impl_channel_conversion_both {
-        ($this_pos:ident, $other_pos:ident, $neg:ident, $channel_num:expr) => {
-            impl $this_pos<SingleEnded> {
-                /// Changes the channels to differential mode, where `self` and
-                /// `_other_pos` are the positive inputs and `_neg` is the negative
-                /// input.
-                pub fn both_into_differential<P>(
-                    self,
-                    _other_pos: $other_pos<SingleEnded>,
-                    _neg: $neg<SingleEnded>,
-                    adc12: &mut Adc12<P, Disabled, Disabled>,
-                ) -> ($this_pos<Differential>, $other_pos<Differential>) {
-                    adc12.adc1.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                    });
-                    adc12.adc2.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                    });
-                    (
-                        $this_pos {
-                            _state: PhantomData,
-                        },
-                        $other_pos {
-                            _state: PhantomData,
-                        },
-                    )
-                }
-            }
-
-            impl $this_pos<Differential> {
-                /// Changes the channels to single-ended mode.
-                pub fn both_into_single_ended<P>(
-                    self,
-                    _other: $other_pos<Differential>,
-                    adc12: &mut Adc12<P, Disabled, Disabled>,
-                ) -> (
-                    ($this_pos<SingleEnded>, $other_pos<SingleEnded>),
-                    $neg<SingleEnded>,
-                ) {
-                    adc12.adc1.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                    });
-                    adc12.adc2.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                    });
-                    (
-                        (
-                            $this_pos {
-                                _state: PhantomData,
-                            },
-                            $other_pos {
-                                _state: PhantomData,
-                            },
-                        ),
-                        $neg {
-                            _state: PhantomData,
-                        },
-                    )
-                }
-            }
-        };
-    }
-    impl_channel_conversion_both!(Adc1In5, Adc2In5, Adc12In6, 5);
-    impl_channel_conversion_both!(Adc2In5, Adc1In5, Adc12In6, 5);
 }
