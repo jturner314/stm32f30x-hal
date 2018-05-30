@@ -3,7 +3,6 @@
 pub use self::channels::{Adc12Channels, Adc1Channel, Adc1ChannelId, Adc2Channel, Adc2ChannelId};
 
 use super::*;
-use delay::Delay;
 use prelude::*;
 use rcc::{Clocks, AHB};
 use stm32f30x;

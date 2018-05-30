@@ -215,7 +215,7 @@ macro_rules! impl_pair_unpowered_unpowered {
             /// Enable voltage regulator for both ADCs.
             ///
             /// This avoids having to wait 10 us for each ADC separately.
-            pub fn power_on(self, delay: &mut Delay) -> $Pair<P, Disabled, Disabled> {
+            pub fn power_on(self, delay: &mut ::delay::Delay) -> $Pair<P, Disabled, Disabled> {
                 self.$master
                     .reg
                     .cr
@@ -674,7 +674,7 @@ macro_rules! impl_single_unpowered {
     ($Adci:ident) => {
         impl<P> $Adci<P, Unpowered> {
             /// Enable ADC voltage regulator.
-            pub fn power_on(self, delay: &mut Delay) -> $Adci<P, Disabled> {
+            pub fn power_on(self, delay: &mut ::delay::Delay) -> $Adci<P, Disabled> {
                 // Enable ADC voltage regulator.
                 self.reg
                     .cr
@@ -699,7 +699,7 @@ macro_rules! impl_single_disabled {
     ($Adci:ident) => {
         impl<P> $Adci<P, Disabled> {
             /// Calibrates the ADC for single-ended inputs.
-            pub fn calibrate_single_ended(&mut self, delay: &mut Delay) {
+            pub fn calibrate_single_ended(&mut self, delay: &mut ::delay::Delay) {
                 debug_assert!(self.reg.cr.read().aden().bit_is_clear());
                 // Select single-ended calibration.
                 self.reg.cr.modify(|_, w| w.adcaldif().clear_bit());
@@ -712,7 +712,7 @@ macro_rules! impl_single_disabled {
             }
 
             /// Calibrates the ADC for differential inputs.
-            pub fn calibrate_differential(&mut self, delay: &mut Delay) {
+            pub fn calibrate_differential(&mut self, delay: &mut ::delay::Delay) {
                 debug_assert!(self.reg.cr.read().aden().bit_is_clear());
                 // Select differential calibration.
                 self.reg.cr.modify(|_, w| w.adcaldif().set_bit());
