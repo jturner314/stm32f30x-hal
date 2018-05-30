@@ -693,4 +693,25 @@ macro_rules! impl_single_independent_running_dma {
     };
 }
 
+/// Master/slave ADC pair.
+pub trait AdcPair {
+    /// The type of the master ADC in the pair.
+    type Master;
+    /// The type of the slave ADC in the pair.
+    type Slave;
+    /// Returns a reference to the master ADC.
+    fn master(&self) -> &Self::Master;
+    /// Returns a reference to the slave ADC.
+    fn slave(&self) -> &Self::Slave;
+    /// Returns a mutable reference to the master ADC.
+    fn master_mut(&mut self) -> &mut Self::Master;
+    /// Returns a mutable reference to the slave ADC.
+    fn slave_mut(&mut self) -> &mut Self::Slave;
+    /// Splits the pair into the master and slave ADCs.
+    fn split(self) -> (Self::Master, Self::Slave);
+    /// Joins the ADCs into a pair.
+    fn join(master: Self::Master, slave: Self::Slave) -> Self;
+}
+
 pub mod adc12;
+// pub mod adc34;
