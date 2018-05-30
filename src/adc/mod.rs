@@ -1434,4 +1434,4 @@ pub trait AdcPair {
 }
 
 pub mod adc12;
-// pub mod adc34;
+pub mod adc34;
