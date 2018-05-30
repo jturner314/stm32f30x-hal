@@ -3,9 +3,7 @@
 pub use self::channels::{Adc12Channels, Adc1Channel, Adc1ChannelId, Adc2Channel, Adc2ChannelId};
 
 use super::*;
-use core::cmp;
 use delay::Delay;
-use dma::DmaChannelPriv;
 use prelude::*;
 use rcc::{Clocks, AHB};
 use stm32f30x;
@@ -426,65 +424,29 @@ pub mod channels {
         }
     }
 
-    macro_rules! impl_from_pins {
-        ($borrowed:ident, $id:ident, $channel:ident, $pos:ident) => {
-            impl<'a> From<(&'a $channel<SingleEnded>, &'a $pos<Analog>)> for $borrowed<'a> {
-                fn from(_: (&'a $channel<SingleEnded>, &'a $pos<Analog>)) -> $borrowed<'a> {
-                    $borrowed {
-                        id: $id::$channel,
-                        life: PhantomData,
-                    }
-                }
-            }
-        };
-        ($borrowed:ident, $id:ident, $channel:ident, $pos:ident, $neg:ident) => {
-            impl_from_pins!($borrowed, $id, $channel, $pos);
-            impl<'a>
-                From<(
-                    &'a $channel<Differential>,
-                    &'a $pos<Analog>,
-                    &'a $neg<Analog>,
-                )> for $borrowed<'a>
-            {
-                fn from(
-                    _: (
-                        &'a $channel<Differential>,
-                        &'a $pos<Analog>,
-                        &'a $neg<Analog>,
-                    ),
-                ) -> $borrowed<'a> {
-                    $borrowed {
-                        id: $id::$channel,
-                        life: PhantomData,
-                    }
-                }
-            }
-        };
-    }
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In1, PA0, PA1);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In2, PA1, PA2);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In3, PA2, PA3);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In4, PA3, PF4);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In5, PF4, PC0);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In10, PF2);
 
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In1, PA0, PA1);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In2, PA1, PA2);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In3, PA2, PA3);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In4, PA3, PF4);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In5, PF4, PC0);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In6, PC0, PC1);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In7, PC1, PC2);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In8, PC2, PC3);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In9, PC3, PF2);
-    impl_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In10, PF2);
-
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In1, PA4, PA5);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In2, PA5, PA6);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In3, PA6, PA7);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In4, PA7, PC4);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In5, PC4, PC0);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In6, PC0, PC1);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In7, PC1, PC2);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In8, PC2, PC3);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In9, PC3, PF2);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In10, PF2, PC5);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In11, PC5, PB2);
-    impl_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In12, PB2);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In1, PA4, PA5);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In2, PA5, PA6);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In3, PA6, PA7);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In4, PA7, PC4);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In5, PC4, PC0);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In10, PF2, PC5);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In11, PC5, PB2);
+    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In12, PB2);
 
     impl<'a> From<&'a TemperatureSensor> for Adc1Channel<'a> {
         fn from(_: &'a TemperatureSensor) -> Adc1Channel<'a> {
@@ -632,7 +594,8 @@ pub mod channels {
     /// ADC1 and ADC2 channel singletons.
     ///
     /// Note that this does not include the special channels (e.g. the
-    /// temperature sensor and internal voltage reference).
+    /// temperature sensor and internal voltage reference), which must
+    /// be explicitly enabled to be used.
     pub struct Adc12Channels {
         /// ADC1_IN1
         pub adc1_in1: Adc1In1<SingleEnded>,

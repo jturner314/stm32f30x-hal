@@ -5,7 +5,6 @@
 // TODO: allow converting channel to differential mode when only the corresponding ADC is disabled
 
 use core::marker::PhantomData;
-use cortex_m;
 use dma;
 use gpio::Analog;
 use heapless::Vec;
@@ -509,6 +508,8 @@ macro_rules! impl_pair_withsequence_withsequence {
                 's: 'scope,
                 D: AdcDmaTokens<'scope, <Self as AdcPair>::Master>,
             {
+                use dma::DmaChannelPriv;
+
                 debug_assert!(self.$master.reg.cr.read().aden().bit_is_set());
                 debug_assert!(self.$master.reg.cr.read().addis().bit_is_clear());
                 debug_assert!(self.$master.reg.cr.read().adstart().bit_is_clear());
@@ -707,7 +708,7 @@ macro_rules! impl_single_disabled {
                 while self.reg.cr.read().adcal().bit_is_set() {}
                 // Wait for at least 4 ADC clock cycles.
                 // (See note in sec 15.3.9 of reference manual.)
-                delay.delay_us(cmp::max(4_000_000 / self.clock_freq.0, 1))
+                delay.delay_us(::core::cmp::max(4_000_000 / self.clock_freq.0, 1))
             }
 
             /// Calibrates the ADC for differential inputs.
@@ -720,7 +721,7 @@ macro_rules! impl_single_disabled {
                 while self.reg.cr.read().adcal().bit_is_set() {}
                 // Wait for at least 4 ADC clock cycles.
                 // (See note in sec 15.3.9 of reference manual.)
-                delay.delay_us(cmp::max(4_000_000 / self.clock_freq.0, 1))
+                delay.delay_us(::core::cmp::max(4_000_000 / self.clock_freq.0, 1))
             }
 
             /// Enables the ADC. It should be calibrated first.
@@ -1052,6 +1053,8 @@ macro_rules! impl_single_independent_with_sequence {
                 'seq: 'scope,
                 D: AdcDmaTokens<'scope, Self>,
             {
+                use dma::DmaChannelPriv;
+
                 debug_assert!(self.reg.cr.read().aden().bit_is_set());
                 debug_assert!(self.reg.cr.read().addis().bit_is_clear());
                 debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
@@ -1185,7 +1188,7 @@ macro_rules! define_impl_internalref {
             /// Returns `None` if the internal reference voltage is already
             /// enabled on ADC1/2 or ADC3/4.
             pub fn enable_internal_ref(&mut self) -> Option<InternalRef> {
-                cortex_m::interrupt::free(|_| {
+                ::cortex_m::interrupt::free(|_| {
                     if unsafe { INTERNAL_REF_ENABLED } {
                         None
                     } else {
@@ -1198,10 +1201,46 @@ macro_rules! define_impl_internalref {
 
             /// Disables the internal reference voltage.
             pub fn disable_internal_ref(&mut self, _: InternalRef) {
-                cortex_m::interrupt::free(|_| {
+                ::cortex_m::interrupt::free(|_| {
                     self.ccr_mut().modify(|_, w| w.vrefen().clear_bit());
                     unsafe { INTERNAL_REF_ENABLED = false };
                 });
+            }
+        }
+    };
+}
+
+macro_rules! impl_channel_from_pins {
+    ($borrowed:ident, $id:ident, $channel:ident, $pos:ident) => {
+        impl<'a> From<(&'a $channel<SingleEnded>, &'a $pos<Analog>)> for $borrowed<'a> {
+            fn from(_: (&'a $channel<SingleEnded>, &'a $pos<Analog>)) -> $borrowed<'a> {
+                $borrowed {
+                    id: $id::$channel,
+                    life: PhantomData,
+                }
+            }
+        }
+    };
+    ($borrowed:ident, $id:ident, $channel:ident, $pos:ident, $neg:ident) => {
+        impl_channel_from_pins!($borrowed, $id, $channel, $pos);
+        impl<'a>
+            From<(
+                &'a $channel<Differential>,
+                &'a $pos<Analog>,
+                &'a $neg<Analog>,
+            )> for $borrowed<'a>
+        {
+            fn from(
+                _: (
+                    &'a $channel<Differential>,
+                    &'a $pos<Analog>,
+                    &'a $neg<Analog>,
+                ),
+            ) -> $borrowed<'a> {
+                $borrowed {
+                    id: $id::$channel,
+                    life: PhantomData,
+                }
             }
         }
     };
