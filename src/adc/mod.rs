@@ -184,6 +184,453 @@ pub unsafe trait AdcDmaTokens<'scope, Adc> {
     fn channel(self) -> Self::Channel;
 }
 
+macro_rules! impl_pair_unpowered_unpowered {
+    ($Pair:ident, $Master:ident, $Slave:ident, $master:ident, $slave:ident) => {
+        impl<P> $Pair<P, Unpowered, Unpowered> {
+            /// Enable voltage regulator for both ADCs.
+            ///
+            /// This avoids having to wait 10 us for each ADC separately.
+            pub fn power_on(self, delay: &mut Delay) -> $Pair<P, Disabled, Disabled> {
+                self.$master
+                    .reg
+                    .cr
+                    .write(|w| w.deeppwd().clear_bit().advregen().clear_bit());
+                self.$master
+                    .reg
+                    .cr
+                    .write(|w| w.deeppwd().clear_bit().advregen().set_bit());
+                self.$slave
+                    .reg
+                    .cr
+                    .write(|w| w.deeppwd().clear_bit().advregen().clear_bit());
+                self.$slave
+                    .reg
+                    .cr
+                    .write(|w| w.deeppwd().clear_bit().advregen().set_bit());
+                delay.delay_us(10u8);
+                $Pair {
+                    $master: $Master {
+                        clock_freq: self.$master.clock_freq,
+                        reg: self.$master.reg,
+                        pair_state: self.$master.pair_state,
+                        state: Disabled {},
+                    },
+                    $slave: $Slave {
+                        clock_freq: self.$slave.clock_freq,
+                        reg: self.$slave.reg,
+                        pair_state: self.$slave.pair_state,
+                        state: Disabled {},
+                    },
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_pair_disabled_disabled {
+    ($Pair:ident, $Master:ident, $Slave:ident, $master:ident, $slave:ident) => {
+        impl<P> $Pair<P, Disabled, Disabled> {
+            /// Enables independent mode.
+            pub fn into_independent(mut self) -> $Pair<Independent, Disabled, Disabled> {
+                const INDEPENDENT: u8 = 0b00000;
+                self.ccr_mut()
+                    .modify(|_, w| unsafe { w.mult().bits(INDEPENDENT) });
+                $Pair {
+                    $master: $Master {
+                        clock_freq: self.$master.clock_freq,
+                        reg: self.$master.reg,
+                        pair_state: PhantomData,
+                        state: self.$master.state,
+                    },
+                    $slave: $Slave {
+                        clock_freq: self.$slave.clock_freq,
+                        reg: self.$slave.reg,
+                        pair_state: PhantomData,
+                        state: self.$slave.state,
+                    },
+                }
+            }
+
+            /// Enables dual mode.
+            pub fn into_dual(mut self) -> $Pair<Dual, Disabled, Disabled> {
+                const REG_SIMUL_INJ_SIMUL: u8 = 0b00001;
+                self.ccr_mut()
+                    .modify(|_, w| unsafe { w.mult().bits(REG_SIMUL_INJ_SIMUL) });
+                $Pair {
+                    $master: $Master {
+                        clock_freq: self.$master.clock_freq,
+                        reg: self.$master.reg,
+                        pair_state: PhantomData,
+                        state: self.$master.state,
+                    },
+                    $slave: $Slave {
+                        clock_freq: self.$slave.clock_freq,
+                        reg: self.$slave.reg,
+                        pair_state: PhantomData,
+                        state: self.$slave.state,
+                    },
+                }
+            }
+
+            /// Enables both ADCs. They should be calibrated first.
+            ///
+            /// This avoids waiting separately for each ADC to finish its
+            /// initialization sequence.
+            pub fn enable(self) -> $Pair<P, Enabled, Enabled> {
+                self.$master.reg.cr.modify(|_, w| w.aden().set_bit());
+                self.$slave.reg.cr.modify(|_, w| w.aden().set_bit());
+                while self.$master.reg.isr.read().adrdy().bit_is_clear()
+                    && self.$slave.reg.isr.read().adrdy().bit_is_clear()
+                {}
+                $Pair {
+                    $master: $Master {
+                        clock_freq: self.$master.clock_freq,
+                        reg: self.$master.reg,
+                        pair_state: self.$master.pair_state,
+                        state: Enabled {},
+                    },
+                    $slave: $Slave {
+                        clock_freq: self.$slave.clock_freq,
+                        reg: self.$slave.reg,
+                        pair_state: self.$slave.pair_state,
+                        state: Enabled {},
+                    },
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_pair_dual_enabled_enabled {
+    ($Pair:ident, $master:ident, $slave:ident, $MasterChannel:ident, $SlaveChannel:ident) => {
+        impl $Pair<Dual, Enabled, Enabled> {
+            /// Sets the sequences for regular conversion.
+            ///
+            /// Returns `Err` if any of the following are true:
+            ///
+            /// * There are conflicting channels (i.e. electrically connected
+            ///   channels that would be converted at the same time in the
+            ///   sequence).
+            ///
+            /// * The sequences have different lengths.
+            ///
+            /// * The length of a sequence is less than 1 or greater than 16.
+            ///
+            /// In the case of `Err`, `self` is returned unchanged.
+            pub fn with_sequences<'m, 's>(
+                self,
+                master_sequence: &[$MasterChannel<'m>],
+                slave_sequence: &[$SlaveChannel<'s>],
+            ) -> Result<
+                $Pair<Dual, WithSequence<'m>, WithSequence<'s>>,
+                ($Pair<Dual, Enabled, Enabled>, DualSequenceError),
+            > {
+                if master_sequence.len() != slave_sequence.len() {
+                    return Err((self, DualSequenceError::UnequalLen));
+                }
+                if master_sequence.len() < 1 || master_sequence.len() > 16 {
+                    return Err((self, DualSequenceError::BadLen));
+                }
+                for (master_chan, slave_chan) in master_sequence.iter().zip(slave_sequence) {
+                    if master_chan.id().conflicts_with(slave_chan.id()) {
+                        return Err((self, DualSequenceError::Conflict));
+                    }
+                }
+                Ok($Pair {
+                    $master: unsafe { self.$master.with_sequence_unchecked(master_sequence) },
+                    $slave: unsafe { self.$slave.with_sequence_unchecked(slave_sequence) },
+                })
+            }
+        }
+    };
+}
+
+macro_rules! impl_pair_withsequence_withsequence {
+    (
+        $Pair:ident,
+        $PairContIter:ident,
+        $Master:ident,
+        $Slave:ident,
+        $master:ident,
+        $slave:ident,
+        $pair_reg_ptr:expr,
+        $master_reg_ptr:expr,
+    ) => {
+        impl<'m, 's> $Pair<Dual, WithSequence<'m>, WithSequence<'s>> {
+            /// Sets the ADCs to single conversion mode; runs the regular sequence;
+            /// and for each conversion in the sequence, calls `f` with the
+            /// (zero-based) index within the sequence and the pair of converted
+            /// values.
+            ///
+            /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
+            /// overruns.
+            pub fn run_sequence_once<F>(&mut self, mut f: F)
+            where
+                F: FnMut(u8, (u16, u16)),
+            {
+                debug_assert!(self.$master.reg.cr.read().aden().bit_is_set());
+                debug_assert!(self.$master.reg.cr.read().addis().bit_is_clear());
+
+                // Set the master ADC to single conversion mode with auto-delay.
+                self.$master.reg.cfgr.modify(|_, w| {
+                    w.cont().clear_bit();
+                    w.autdly().set_bit()
+                });
+                // Clear overrun, end-of-conversion, and end-of-sequence flags on
+                // master ADC.
+                self.$master.reg.isr.write(|w| {
+                    w.ovr().set_bit();
+                    w.eoc().set_bit();
+                    w.eos().set_bit()
+                });
+
+                // Run sequence.
+                let seq_len = self.$master.sequence_len();
+                self.$master.reg.cr.modify(|_, w| w.adstart().set_bit());
+                for i in 0..seq_len {
+                    while self.$master.reg.isr.read().eoc().bit_is_clear() {}
+                    let common_data = self.cdr().read();
+                    // Manually clear EOC flag since the hardware doesn't
+                    // automatically do so when reading CDR.
+                    self.$master.reg.isr.write(|w| w.eoc().set_bit());
+                    f(
+                        i,
+                        (
+                            common_data.rdata_mst().bits(),
+                            common_data.rdata_slv().bits(),
+                        ),
+                    );
+                }
+                let isr = self.$master.reg.isr.read();
+                debug_assert!(isr.eos().bit_is_set());
+                // There should never be an overrun in auto-delayed mode.
+                debug_assert!(isr.ovr().bit_is_clear());
+            }
+
+            /// Sets the ADCs to continuous conversion mode; starts the regular
+            /// sequence; calls `f` with an (infinite) iterator over the converted
+            /// values; and then stops the ADCs.
+            ///
+            /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
+            /// overruns.
+            ///
+            /// Note that the first conversion is performed immediately, and each
+            /// subsequent conversion is performed immediately *after* reading each
+            /// value by calling `.next()` on the iterator. This makes it possible
+            /// for the ADC to perform conversions in parallel with user code, but
+            /// it also means that if there's a significant amount of time between
+            /// calls to `.next()`, the time between conversion and reading the
+            /// converted value is large.
+            pub fn with_running_cont<F, O>(&mut self, f: F) -> O
+            where
+                F: for<'a> FnOnce($PairContIter<'a, 'm, 's>) -> O,
+            {
+                debug_assert!(self.$master.reg.cr.read().aden().bit_is_set());
+                debug_assert!(self.$master.reg.cr.read().addis().bit_is_clear());
+
+                // Set the master ADC to continuous conversion mode with auto-delay.
+                self.$master.reg.cfgr.modify(|_, w| {
+                    w.cont().set_bit();
+                    w.autdly().set_bit()
+                });
+                // Clear overrun, end-of-conversion, and end-of-sequence flags on
+                // master ADC.
+                self.$master.reg.isr.write(|w| {
+                    w.ovr().set_bit();
+                    w.eoc().set_bit();
+                    w.eos().set_bit()
+                });
+
+                // Start sequence.
+                self.$master.reg.cr.modify(|_, w| w.adstart().set_bit());
+                // Run closure.
+                let out = f($PairContIter { adc12: self });
+                // There should never be an overrun in auto-delayed mode.
+                debug_assert!(self.$master.reg.isr.read().ovr().bit_is_clear());
+                // Stop the ADCs and wait for them to be stopped.
+                self.$master.reg.cr.modify(|_, w| w.adstp().set_bit());
+                loop {
+                    let cr = self.$master.reg.cr.read();
+                    if cr.adstp().bit_is_clear() && cr.adstart().bit_is_clear() {
+                        break;
+                    }
+                }
+
+                out
+            }
+
+            /// Sets the ADCs to continuous conversion mode with auto-delay;
+            /// configures and enables the DMA channel for writing into the
+            /// buffer in one shot mode; and starts the regular sequence.
+            ///
+            /// This method uses dual-DMA mode (`MDMA = 0b10`) so that only a
+            /// single DMA channel is necessary.
+            ///
+            /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
+            /// overruns.
+            // TODO: Would this work with the slave DMA channel?
+            pub fn start_dma<'body, 'scope, D>(
+                mut self,
+                buf: &'scope mut [[u16; 2]],
+                mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+                dma_tok: D,
+            ) -> $Pair<
+                Dual,
+                RunningDmaMaster<'m, 'body, 'scope, D::Channel>,
+                RunningDmaSlave<'s, 'body, 'scope>,
+            >
+            where
+                'm: 'scope,
+                's: 'scope,
+                D: AdcDmaTokens<'scope, <Self as AdcPair>::Master>,
+            {
+                debug_assert!(self.$master.reg.cr.read().aden().bit_is_set());
+                debug_assert!(self.$master.reg.cr.read().addis().bit_is_clear());
+                debug_assert!(self.$master.reg.cr.read().adstart().bit_is_clear());
+                debug_assert!(self.$master.reg.cfgr.read().dmaen().bit_is_clear());
+                debug_assert!(self.$slave.reg.cfgr.read().dmaen().bit_is_clear());
+
+                // Set the master ADC to continuous conversion mode with auto-delay.
+                self.$master.reg.cfgr.modify(|_, w| {
+                    w.cont().set_bit();
+                    w.autdly().set_bit()
+                });
+                // Clear the MDMA bits to reset any pending DMA requests from this
+                // ADC pair.
+                self.ccr_mut().modify(|_, w| unsafe { w.mdma().bits(0b00) });
+                // Clear overrun, end-of-conversion, and end-of-sequence flags.
+                self.$master.reg.isr.write(|w| {
+                    w.ovr().set_bit();
+                    w.eoc().set_bit();
+                    w.eos().set_bit()
+                });
+
+                // Set up the guard to wait for the ADCs to finish and disable generation of DMA
+                // requests after the DMA transfer has completed.
+                if let Some(handler) = guard.handler_mut() {
+                    handler.set_periph(Some(|| {
+                        // This is safe and we don't have to worry about concurrent access to the
+                        // register because:
+                        //
+                        // 1. The ADC has exclusive access to its register.
+                        //
+                        // 2. Since the running ADC has the `'body` lifetime from the `ScopeGuard`,
+                        //    the closure cannot not called while the running ADC is alive, so the
+                        //    running ADC cannot access the register concurrently with this
+                        //    closure.
+                        //
+                        // 3. The closure is disabled before returning the non-running ADC, so the
+                        //    non-running ADC cannot access the register with this
+                        //    closure.
+                        let master_reg = unsafe { &(*$master_reg_ptr) };
+                        let pair_reg = unsafe { &(*$pair_reg_ptr) };
+                        // The hardware should automatically stop the ADC after the DMA
+                        // transfer has completed. This loop is in case it takes the hardware a
+                        // little while to stop the ADC. (The reference manual does not specify
+                        // whether this is necessary.)
+                        while master_reg.cr.read().adstart().bit_is_set() {}
+                        // Disable generation of DMA requests.
+                        pair_reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+                    }));
+                }
+
+                // Configure and enable the DMA transfer.
+                self.ccr_mut().modify(|_, w| {
+                    unsafe { w.mdma().bits(0b10) };
+                    w.dmacfg().clear_bit() // one-shot mode
+                });
+                let data_reg = self.cdr() as *const _ as *const [u16; 2];
+                let transfer =
+                    unsafe { dma_tok.channel().enable_periph_to_mem(guard, data_reg, buf) };
+
+                self.$master.reg.cr.modify(|_, w| w.adstart().set_bit());
+                $Pair {
+                    $master: $Master {
+                        clock_freq: self.$master.clock_freq,
+                        reg: self.$master.reg,
+                        pair_state: self.$master.pair_state,
+                        state: RunningDmaMaster {
+                            seq: self.$master.state.life,
+                            transfer,
+                        },
+                    },
+                    $slave: $Slave {
+                        clock_freq: self.$slave.clock_freq,
+                        reg: self.$slave.reg,
+                        pair_state: self.$slave.pair_state,
+                        state: RunningDmaSlave {
+                            seq: self.$slave.state.life,
+                            body: PhantomData,
+                            scope: PhantomData,
+                        },
+                    },
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_pair_dual_runningdma_runningdma {
+    ($Pair:ident, $Master:ident, $Slave:ident, $master:ident, $slave:ident) => {
+        impl<'m, 's, 'body, 'scope, Channel>
+            $Pair<
+                Dual,
+                RunningDmaMaster<'m, 'body, 'scope, Channel>,
+                RunningDmaSlave<'s, 'body, 'scope>,
+            > where
+            Channel: dma::DmaChannel,
+        {
+            /// Waits for the DMA transfer to finish.
+            pub fn wait(
+                self,
+            ) -> (
+                $Pair<Dual, WithSequence<'m>, WithSequence<'s>>,
+                Channel,
+                ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
+                &'scope mut [[u16; 2]],
+            ) {
+                let $Pair { $master, $slave } = self;
+                // Wait for DMA transfer to finish.
+                let (chan, mut guard, buf) = $master.state.transfer.wait();
+                // The hardware should automatically stop the ADCs. This loop is in
+                // case it takes a little while to stop the ADCs after the DMA
+                // transfer has completed. (The reference manual does not specify
+                // whether this is necessary.)
+                while $master.reg.cr.read().adstart().bit_is_set() {}
+                // Put the ADCs back together so that we can access `.ccr_mut()`.
+                let mut pair = $Pair {
+                    $master: $Master {
+                        clock_freq: $master.clock_freq,
+                        reg: $master.reg,
+                        pair_state: $master.pair_state,
+                        state: WithSequence {
+                            life: $master.state.seq,
+                        },
+                    },
+                    $slave: $Slave {
+                        clock_freq: $slave.clock_freq,
+                        reg: $slave.reg,
+                        pair_state: $slave.pair_state,
+                        state: WithSequence {
+                            life: $slave.state.seq,
+                        },
+                    },
+                };
+                // Disable generation of DMA requests.
+                pair.ccr_mut().modify(|_, w| unsafe { w.mdma().bits(0b00) });
+                // Remove guard handler.
+                if let Some(handler) = guard.handler_mut() {
+                    handler.set_periph(None);
+                }
+                // There should never be an overrun in auto-delayed mode.
+                debug_assert!(pair.$master.reg.isr.read().ovr().bit_is_clear());
+
+                (pair, chan, guard, buf)
+            }
+        }
+    };
+}
+
 macro_rules! impl_single_any {
     ($Adci:ident) => {
         impl<P, S> $Adci<P, S> {
