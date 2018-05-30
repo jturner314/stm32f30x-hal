@@ -130,8 +130,8 @@ impl_pair_withsequence_withsequence!(
 
 impl_pair_dual_runningdma_runningdma!(Adc12, Adc1, Adc2, adc1, adc2);
 
-impl_single_any!(Adc1);
-impl_single_any!(Adc2);
+impl_single_any!(Adc1, Adc1ChannelId);
+impl_single_any!(Adc2, Adc2ChannelId);
 
 impl_single_unpowered!(Adc1);
 impl_single_unpowered!(Adc2);
@@ -758,28 +758,58 @@ pub mod channels {
         _state: PhantomData<S>,
     }
 
-    impl_channel_conversions!(Adc12, Adc1In1, Adc1In2, [(adc1, 1)]);
-    impl_channel_conversions!(Adc12, Adc1In2, Adc1In3, [(adc1, 2)]);
-    impl_channel_conversions!(Adc12, Adc1In3, Adc1In4, [(adc1, 3)]);
-    impl_channel_conversions!(Adc12, Adc1In4, Adc1In5, [(adc1, 4)]);
-    impl_channel_conversions_shared_neg!((Adc12, adc1, adc2), adc1, Adc1In5, Adc2In5, Adc12In6, 5);
-    impl_channel_conversions!(Adc12, Adc1In11, Adc1In12, [(adc1, 11)]);
-    impl_channel_conversions!(Adc12, Adc1In12, Adc1In13, [(adc1, 12)]);
+    impl_channel_conversions!(Adc12, Adc1In1, Adc1In2, [(adc1, Adc1ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc1In2, Adc1In3, [(adc1, Adc1ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc1In3, Adc1In4, [(adc1, Adc1ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc1In4, Adc1In5, [(adc1, Adc1ChannelId)]);
+    impl_channel_conversions_shared_neg!(
+        Adc12,
+        (adc1, Adc1ChannelId, Adc1In5),
+        (adc2, Adc2ChannelId, Adc2In5),
+        Adc12In6
+    );
+    impl_channel_conversions!(Adc12, Adc1In11, Adc1In12, [(adc1, Adc1ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc1In12, Adc1In13, [(adc1, Adc1ChannelId)]);
 
-    impl_channel_conversions!(Adc12, Adc2In1, Adc2In2, [(adc2, 1)]);
-    impl_channel_conversions!(Adc12, Adc2In2, Adc2In3, [(adc2, 2)]);
-    impl_channel_conversions!(Adc12, Adc2In3, Adc2In4, [(adc2, 3)]);
-    impl_channel_conversions!(Adc12, Adc2In4, Adc2In5, [(adc2, 4)]);
-    impl_channel_conversions_shared_neg!((Adc12, adc1, adc2), adc2, Adc2In5, Adc1In5, Adc12In6, 5);
-    impl_channel_conversions!(Adc12, Adc2In11, Adc2In12, [(adc2, 11)]);
-    impl_channel_conversions!(Adc12, Adc2In12, Adc2In13, [(adc2, 12)]);
-    impl_channel_conversions!(Adc12, Adc2In13, Adc2In14, [(adc2, 13)]);
-    impl_channel_conversions!(Adc12, Adc2In14, Adc2In15, [(adc2, 14)]);
+    impl_channel_conversions!(Adc12, Adc2In1, Adc2In2, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In2, Adc2In3, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In3, Adc2In4, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In4, Adc2In5, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions_shared_neg!(
+        Adc12,
+        (adc2, Adc2ChannelId, Adc2In5),
+        (adc1, Adc1ChannelId, Adc1In5),
+        Adc12In6
+    );
+    impl_channel_conversions!(Adc12, Adc2In11, Adc2In12, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In12, Adc2In13, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In13, Adc2In14, [(adc2, Adc2ChannelId)]);
+    impl_channel_conversions!(Adc12, Adc2In14, Adc2In15, [(adc2, Adc2ChannelId)]);
 
-    impl_channel_conversions!(Adc12, Adc12In6, Adc12In7, [(adc1, 6), (adc2, 6)]);
-    impl_channel_conversions!(Adc12, Adc12In7, Adc12In8, [(adc1, 7), (adc2, 7)]);
-    impl_channel_conversions!(Adc12, Adc12In8, Adc12In9, [(adc1, 8), (adc2, 8)]);
-    impl_channel_conversions!(Adc12, Adc12In9, Adc12In10, [(adc1, 9), (adc2, 9)]);
+    impl_channel_conversions!(
+        Adc12,
+        Adc12In6,
+        Adc12In7,
+        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc12,
+        Adc12In7,
+        Adc12In8,
+        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc12,
+        Adc12In8,
+        Adc12In9,
+        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc12,
+        Adc12In9,
+        Adc12In10,
+        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
+    );
 
     impl Adc12In10<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -787,17 +817,16 @@ pub mod channels {
         pub fn into_differential<P>(
             self,
             _neg: (Adc1In11<SingleEnded>, Adc2In11<SingleEnded>),
-            adc12: &mut Adc12<P, Disabled, Disabled>,
+            pair: &mut Adc12<P, Disabled, Disabled>,
         ) -> Adc12In10<Differential> {
-            const CHANNEL_NUM: u8 = 10;
-            adc12.adc1.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
-            adc12.adc2.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair
+                    .adc1
+                    .set_differential_unchecked(Adc1ChannelId::Adc12In10);
+                pair
+                    .adc2
+                    .set_differential_unchecked(Adc2ChannelId::Adc12In10);
+            }
             Adc12In10 {
                 _state: PhantomData,
             }
@@ -808,20 +837,19 @@ pub mod channels {
         /// Changes the channel to single-ended mode.
         pub fn into_single_ended<P>(
             self,
-            adc12: &mut Adc12<P, Disabled, Disabled>,
+            pair: &mut Adc12<P, Disabled, Disabled>,
         ) -> (
             Adc12In10<SingleEnded>,
             (Adc1In11<SingleEnded>, Adc2In11<SingleEnded>),
         ) {
-            const CHANNEL_NUM: u8 = 10;
-            adc12.adc1.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
-            adc12.adc2.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair
+                    .adc1
+                    .set_single_ended_unchecked(Adc1ChannelId::Adc12In10);
+                pair
+                    .adc2
+                    .set_single_ended_unchecked(Adc2ChannelId::Adc12In10);
+            }
             (
                 Adc12In10 {
                     _state: PhantomData,

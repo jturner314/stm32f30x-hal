@@ -130,8 +130,8 @@ impl_pair_withsequence_withsequence!(
 
 impl_pair_dual_runningdma_runningdma!(Adc34, Adc3, Adc4, adc3, adc4);
 
-impl_single_any!(Adc3);
-impl_single_any!(Adc4);
+impl_single_any!(Adc3, Adc3ChannelId);
+impl_single_any!(Adc4, Adc4ChannelId);
 
 impl_single_unpowered!(Adc3);
 impl_single_unpowered!(Adc4);
@@ -723,14 +723,19 @@ pub mod channels {
         _state: PhantomData<S>,
     }
 
-    impl_channel_conversions!(Adc34, Adc3In1, Adc3In2, [(adc3, 1)]);
-    impl_channel_conversions!(Adc34, Adc3In2, Adc3In3, [(adc3, 2)]);
-    impl_channel_conversions!(Adc34, Adc3In3, Adc3In4, [(adc3, 3)]);
-    impl_channel_conversions!(Adc34, Adc3In4, Adc3In5, [(adc3, 4)]);
-    impl_channel_conversions_shared_neg!((Adc34, adc3, adc4), adc3, Adc3In5, Adc4In5, Adc34In6, 5);
-    impl_channel_conversions!(Adc34, Adc3In12, Adc3In13, [(adc3, 12)]);
-    impl_channel_conversions!(Adc34, Adc3In13, Adc3In14, [(adc3, 13)]);
-    impl_channel_conversions!(Adc34, Adc3In14, Adc3In15, [(adc3, 14)]);
+    impl_channel_conversions!(Adc34, Adc3In1, Adc3In2, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc3In2, Adc3In3, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc3In3, Adc3In4, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc3In4, Adc3In5, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions_shared_neg!(
+        Adc34,
+        (adc3, Adc3ChannelId, Adc3In5),
+        (adc4, Adc4ChannelId, Adc4In5),
+        Adc34In6
+    );
+    impl_channel_conversions!(Adc34, Adc3In12, Adc3In13, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc3In13, Adc3In14, [(adc3, Adc3ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc3In14, Adc3In15, [(adc3, Adc3ChannelId)]);
 
     impl Adc3In15<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -740,11 +745,10 @@ pub mod channels {
             _neg: Adc3In16,
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc3In15<Differential> {
-            const CHANNEL_NUM: u8 = 15;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc3
+                    .set_differential_unchecked(Adc3ChannelId::Adc3In15);
+            }
             Adc3In15 {
                 _state: PhantomData,
             }
@@ -757,11 +761,10 @@ pub mod channels {
             self,
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> (Adc3In15<SingleEnded>, Adc3In16) {
-            const CHANNEL_NUM: u8 = 15;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc3
+                    .set_single_ended_unchecked(Adc3ChannelId::Adc3In15);
+            }
             (
                 Adc3In15 {
                     _state: PhantomData,
@@ -773,12 +776,17 @@ pub mod channels {
         }
     }
 
-    impl_channel_conversions!(Adc34, Adc4In1, Adc4In2, [(adc4, 1)]);
-    impl_channel_conversions!(Adc34, Adc4In2, Adc4In3, [(adc4, 2)]);
-    impl_channel_conversions!(Adc34, Adc4In3, Adc4In4, [(adc4, 3)]);
-    impl_channel_conversions!(Adc34, Adc4In4, Adc4In5, [(adc4, 4)]);
-    impl_channel_conversions_shared_neg!((Adc34, adc3, adc4), adc4, Adc4In5, Adc3In5, Adc34In6, 5);
-    impl_channel_conversions!(Adc34, Adc4In12, Adc4In13, [(adc4, 12)]);
+    impl_channel_conversions!(Adc34, Adc4In1, Adc4In2, [(adc4, Adc4ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc4In2, Adc4In3, [(adc4, Adc4ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc4In3, Adc4In4, [(adc4, Adc4ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc4In4, Adc4In5, [(adc4, Adc4ChannelId)]);
+    impl_channel_conversions_shared_neg!(
+        Adc34,
+        (adc4, Adc4ChannelId, Adc4In5),
+        (adc3, Adc3ChannelId, Adc3In5),
+        Adc34In6
+    );
+    impl_channel_conversions!(Adc34, Adc4In12, Adc4In13, [(adc4, Adc4ChannelId)]);
 
     impl Adc4In13<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the positive input.
@@ -789,15 +797,10 @@ pub mod channels {
             self,
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc4In13<Differential> {
-            const CHANNEL_NUM: u8 = 13;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
-            pair.adc4.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc4
+                    .set_differential_unchecked(Adc4ChannelId::Adc4In13);
+            }
             Adc4In13 {
                 _state: PhantomData,
             }
@@ -810,26 +813,46 @@ pub mod channels {
             self,
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc4In13<SingleEnded> {
-            const CHANNEL_NUM: u8 = 13;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
-            pair.adc4.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc4
+                    .set_single_ended_unchecked(Adc4ChannelId::Adc4In13);
+            }
             Adc4In13 {
                 _state: PhantomData,
             }
         }
     }
 
-    impl_channel_conversions!(Adc34, Adc34In6, Adc34In7, [(adc3, 6), (adc4, 6)]);
-    impl_channel_conversions!(Adc34, Adc34In7, Adc34In8, [(adc3, 7), (adc4, 7)]);
-    impl_channel_conversions!(Adc34, Adc34In8, Adc34In9, [(adc3, 8), (adc4, 8)]);
-    impl_channel_conversions!(Adc34, Adc34In9, Adc34In10, [(adc3, 9), (adc4, 9)]);
-    impl_channel_conversions!(Adc34, Adc34In10, Adc34In11, [(adc3, 10), (adc4, 10)]);
+    impl_channel_conversions!(
+        Adc34,
+        Adc34In6,
+        Adc34In7,
+        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc34,
+        Adc34In7,
+        Adc34In8,
+        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc34,
+        Adc34In8,
+        Adc34In9,
+        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc34,
+        Adc34In9,
+        Adc34In10,
+        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
+    );
+    impl_channel_conversions!(
+        Adc34,
+        Adc34In10,
+        Adc34In11,
+        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
+    );
 
     impl Adc34In11<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -839,15 +862,12 @@ pub mod channels {
             _neg: (Adc3In12<SingleEnded>, Adc4In12<SingleEnded>),
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc34In11<Differential> {
-            const CHANNEL_NUM: u8 = 11;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
-            pair.adc4.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() | (1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc3
+                    .set_differential_unchecked(Adc3ChannelId::Adc34In11);
+                pair.adc4
+                    .set_differential_unchecked(Adc4ChannelId::Adc34In11);
+            }
             Adc34In11 {
                 _state: PhantomData,
             }
@@ -863,15 +883,12 @@ pub mod channels {
             Adc34In11<SingleEnded>,
             (Adc3In12<SingleEnded>, Adc4In12<SingleEnded>),
         ) {
-            const CHANNEL_NUM: u8 = 11;
-            pair.adc3.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
-            pair.adc4.reg.difsel.modify(|r, w| unsafe {
-                w.difsel_1_15()
-                    .bits(r.difsel_1_15().bits() & !(1 << CHANNEL_NUM))
-            });
+            unsafe {
+                pair.adc3
+                    .set_single_ended_unchecked(Adc3ChannelId::Adc34In11);
+                pair.adc4
+                    .set_single_ended_unchecked(Adc4ChannelId::Adc34In11);
+            }
             (
                 Adc34In11 {
                     _state: PhantomData,

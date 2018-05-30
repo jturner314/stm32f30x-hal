@@ -188,7 +188,6 @@ pub unsafe trait AdcDmaTokens<'scope, Adc> {
     fn channel(self) -> Self::Channel;
 }
 
-
 macro_rules! impl_iterator_for_paircontiter {
     ($PairContIter:ident, $master:ident) => {
         impl<'p, 'm, 's> Iterator for $PairContIter<'p, 'm, 's> {
@@ -658,13 +657,33 @@ macro_rules! impl_pair_dual_runningdma_runningdma {
 }
 
 macro_rules! impl_single_any {
-    ($Adci:ident) => {
+    ($Adci:ident, $AdciChannelId:ident) => {
         impl<P, S> $Adci<P, S> {
             /// Returns the ADC clock frequency.
             ///
             /// This value is shared for both ADCs in the pair.
             pub fn clock_freq(&self) -> Hertz {
                 self.clock_freq
+            }
+
+            /// Sets the channel with the given index into single-ended mode.
+            unsafe fn set_single_ended_unchecked(&mut self, id: $AdciChannelId) {
+                let channel_num = id as u8;
+                debug_assert!(1 <= channel_num && channel_num <= 15);
+                self.reg.difsel.modify(|r, w| {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() & !(1 << channel_num))
+                });
+            }
+
+            /// Sets the channel with the given index into differential mode.
+            unsafe fn set_differential_unchecked(&mut self, id: $AdciChannelId) {
+                let channel_num = id as u8;
+                debug_assert!(1 <= channel_num && channel_num <= 15);
+                self.reg.difsel.modify(|r, w| {
+                    w.difsel_1_15()
+                        .bits(r.difsel_1_15().bits() | (1 << channel_num))
+                });
             }
         }
     };
@@ -1247,7 +1266,7 @@ macro_rules! impl_channel_from_pins {
 }
 
 macro_rules! impl_channel_conversions {
-    ($Pair:ident, $pos:ident, $neg:ident, [$(($adc:ident, $channel_num:expr)),*]) => {
+    ($Pair:ident, $pos:ident, $neg:ident, [$(($adc:ident, $AdcChannelId:ident)),*]) => {
         impl $pos<SingleEnded> {
             /// Changes the channel to differential mode, where `self` is the
             /// positive input and `_neg` is the negative input.
@@ -1256,15 +1275,14 @@ macro_rules! impl_channel_conversions {
                 _neg: $neg<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> $pos<Differential> {
-                $(
-                    pair.$adc.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                    });
-                )*
-                    $pos {
-                        _state: PhantomData,
-                    }
+                unsafe {
+                    $(
+                        pair.$adc.set_differential_unchecked($AdcChannelId::$pos);
+                    )*
+                }
+                $pos {
+                    _state: PhantomData,
+                }
             }
         }
 
@@ -1274,20 +1292,19 @@ macro_rules! impl_channel_conversions {
                 self,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> ($pos<SingleEnded>, $neg<SingleEnded>) {
-                $(
-                    pair.$adc.reg.difsel.modify(|r, w| unsafe {
-                        w.difsel_1_15()
-                            .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                    });
-                )*
-                    (
-                        $pos {
-                            _state: PhantomData,
-                        },
-                        $neg {
-                            _state: PhantomData,
-                        },
-                    )
+                unsafe {
+                    $(
+                        pair.$adc.set_single_ended_unchecked($AdcChannelId::$pos);
+                    )*
+                }
+                (
+                    $pos {
+                        _state: PhantomData,
+                    },
+                    $neg {
+                        _state: PhantomData,
+                    },
+                )
             }
         }
     };
@@ -1295,12 +1312,10 @@ macro_rules! impl_channel_conversions {
 
 macro_rules! impl_channel_conversions_shared_neg {
     (
-        ($Pair:ident, $master:ident, $slave:ident),
-        $this_adc:ident,
-        $this_pos:ident,
-        $other_pos:ident,
-        $neg:ident,
-        $channel_num:expr
+        $Pair:ident,
+        ($this_adc:ident, $ThisAdcChannelId:ident, $this_pos:ident),
+        ($other_adc:ident, $OtherAdcChannelId:ident, $other_pos:ident),
+        $neg:ident
     ) => {
         impl $this_pos<SingleEnded> {
             /// Changes the channel to differential mode, where `self` is the
@@ -1310,10 +1325,10 @@ macro_rules! impl_channel_conversions_shared_neg {
                 _neg: $neg<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> $this_pos<Differential> {
-                pair.$this_adc.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                });
+                unsafe {
+                    pair.$this_adc
+                        .set_differential_unchecked($ThisAdcChannelId::$this_pos)
+                }
                 $this_pos {
                     _state: PhantomData,
                 }
@@ -1333,10 +1348,10 @@ macro_rules! impl_channel_conversions_shared_neg {
                 _other_pos: &$other_pos<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> ($this_pos<SingleEnded>, $neg<SingleEnded>) {
-                pair.$this_adc.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                });
+                unsafe {
+                    pair.$this_adc
+                        .set_single_ended_unchecked($ThisAdcChannelId::$this_pos)
+                }
                 (
                     $this_pos {
                         _state: PhantomData,
@@ -1358,14 +1373,12 @@ macro_rules! impl_channel_conversions_shared_neg {
                 _neg: $neg<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> ($this_pos<Differential>, $other_pos<Differential>) {
-                pair.$master.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                });
-                pair.$slave.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() | (1 << $channel_num))
-                });
+                unsafe {
+                    pair.$this_adc
+                        .set_differential_unchecked($ThisAdcChannelId::$this_pos);
+                    pair.$other_adc
+                        .set_differential_unchecked($OtherAdcChannelId::$other_pos);
+                }
                 (
                     $this_pos {
                         _state: PhantomData,
@@ -1387,14 +1400,12 @@ macro_rules! impl_channel_conversions_shared_neg {
                 ($this_pos<SingleEnded>, $other_pos<SingleEnded>),
                 $neg<SingleEnded>,
             ) {
-                pair.$master.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                });
-                pair.$slave.reg.difsel.modify(|r, w| unsafe {
-                    w.difsel_1_15()
-                        .bits(r.difsel_1_15().bits() & !(1 << $channel_num))
-                });
+                unsafe {
+                    pair.$this_adc
+                        .set_single_ended_unchecked($ThisAdcChannelId::$this_pos);
+                    pair.$other_adc
+                        .set_single_ended_unchecked($OtherAdcChannelId::$other_pos);
+                }
                 (
                     (
                         $this_pos {
