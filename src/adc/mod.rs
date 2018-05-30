@@ -934,70 +934,102 @@ macro_rules! impl_single_with_sequence {
                 let mut ids = Vec::new();
                 for index in 0..num_channels {
                     match index {
-                        0 => ids.push(unsafe {
-                            *(&self.reg.sqr1.read().sq1().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        1 => ids.push(unsafe {
-                            *(&self.reg.sqr1.read().sq2().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        2 => ids.push(unsafe {
-                            *(&self.reg.sqr1.read().sq3().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        3 => ids.push(unsafe {
-                            *(&self.reg.sqr1.read().sq4().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        4 => ids.push(unsafe {
-                            *(&self.reg.sqr2.read().sq5().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        5 => ids.push(unsafe {
-                            *(&self.reg.sqr2.read().sq6().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        6 => ids.push(unsafe {
-                            *(&self.reg.sqr2.read().sq7().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        7 => ids.push(unsafe {
-                            *(&self.reg.sqr2.read().sq8().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        8 => ids.push(unsafe {
-                            *(&self.reg.sqr2.read().sq9().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        9 => ids.push(unsafe {
-                            *(&self.reg.sqr3.read().sq10().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        10 => ids.push(unsafe {
-                            *(&self.reg.sqr3.read().sq11().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        11 => ids.push(unsafe {
-                            *(&self.reg.sqr3.read().sq12().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        12 => ids.push(unsafe {
-                            *(&self.reg.sqr3.read().sq13().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        13 => ids.push(unsafe {
-                            *(&self.reg.sqr3.read().sq14().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        14 => ids.push(unsafe {
-                            *(&self.reg.sqr4.read().sq15().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
-                        15 => ids.push(unsafe {
-                            *(&self.reg.sqr4.read().sq16().bits() as *const u8
-                                as *const $AdciChannelId)
-                        }).unwrap(),
+                        0 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr1.read().sq1().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        1 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr1.read().sq2().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        2 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr1.read().sq3().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        3 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr1.read().sq4().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        4 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr2.read().sq5().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        5 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr2.read().sq6().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        6 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr2.read().sq7().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        7 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr2.read().sq8().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        8 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr2.read().sq9().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        9 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr3.read().sq10().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        10 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr3.read().sq11().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        11 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr3.read().sq12().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        12 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr3.read().sq13().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        13 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr3.read().sq14().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        14 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr4.read().sq15().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
+                        15 => {
+                            ids.push(unsafe {
+                                *(&self.reg.sqr4.read().sq16().bits() as *const u8
+                                    as *const $AdciChannelId)
+                            }).unwrap()
+                        }
                         _ => unreachable!(),
                     }
                 }
