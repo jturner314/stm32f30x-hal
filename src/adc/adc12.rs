@@ -108,25 +108,11 @@ impl<P, S1, S2> AdcPair for Adc12<P, S1, S2> {
 }
 
 /// Continuous iterator over regular conversions in dual simultaneous mode.
-pub struct Adc12ContIter<'adc12, 'seq1: 'adc12, 'seq2: 'adc12> {
-    adc12: &'adc12 mut Adc12<Dual, WithSequence<'seq1>, WithSequence<'seq2>>,
+pub struct Adc12ContIter<'p, 'm: 'p, 's: 'p> {
+    pair: &'p mut Adc12<Dual, WithSequence<'m>, WithSequence<'s>>,
 }
 
-impl<'adc12, 'seq1, 'seq2> Iterator for Adc12ContIter<'adc12, 'seq1, 'seq2> {
-    type Item = (u16, u16);
-
-    fn next(&mut self) -> Option<(u16, u16)> {
-        while self.adc12.adc1.reg.isr.read().eoc().bit_is_clear() {}
-        let common_data = self.adc12.cdr().read();
-        // Manually clear EOC flag since the hardware doesn't
-        // automatically do so when reading CDR.
-        self.adc12.adc1.reg.isr.write(|w| w.eoc().set_bit());
-        Some((
-            common_data.rdata_mst().bits(),
-            common_data.rdata_slv().bits(),
-        ))
-    }
-}
+impl_iterator_for_paircontiter!(Adc12ContIter, adc1);
 
 impl_pair_unpowered_unpowered!(Adc12, Adc1, Adc2, adc1, adc2);
 

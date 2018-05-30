@@ -184,6 +184,27 @@ pub unsafe trait AdcDmaTokens<'scope, Adc> {
     fn channel(self) -> Self::Channel;
 }
 
+
+macro_rules! impl_iterator_for_paircontiter {
+    ($PairContIter:ident, $master:ident) => {
+        impl<'p, 'm, 's> Iterator for $PairContIter<'p, 'm, 's> {
+            type Item = (u16, u16);
+
+            fn next(&mut self) -> Option<(u16, u16)> {
+                while self.pair.$master.reg.isr.read().eoc().bit_is_clear() {}
+                let common_data = self.pair.cdr().read();
+                // Manually clear EOC flag since the hardware doesn't
+                // automatically do so when reading CDR.
+                self.pair.$master.reg.isr.write(|w| w.eoc().set_bit());
+                Some((
+                    common_data.rdata_mst().bits(),
+                    common_data.rdata_slv().bits(),
+                ))
+            }
+        }
+    };
+}
+
 macro_rules! impl_pair_unpowered_unpowered {
     ($Pair:ident, $Master:ident, $Slave:ident, $master:ident, $slave:ident) => {
         impl<P> $Pair<P, Unpowered, Unpowered> {
@@ -444,7 +465,7 @@ macro_rules! impl_pair_withsequence_withsequence {
                 // Start sequence.
                 self.$master.reg.cr.modify(|_, w| w.adstart().set_bit());
                 // Run closure.
-                let out = f($PairContIter { adc12: self });
+                let out = f($PairContIter { pair: self });
                 // There should never be an overrun in auto-delayed mode.
                 debug_assert!(self.$master.reg.isr.read().ovr().bit_is_clear());
                 // Stop the ADCs and wait for them to be stopped.
