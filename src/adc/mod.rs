@@ -489,7 +489,6 @@ macro_rules! impl_pair_withsequence_withsequence {
             ///
             /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
             /// overruns.
-            // TODO: Would this work with the slave DMA channel?
             pub fn start_dma<'body, 'scope, D>(
                 mut self,
                 buf: &'scope mut [[u16; 2]],
