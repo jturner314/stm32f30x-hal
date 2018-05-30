@@ -346,7 +346,7 @@ macro_rules! impl_pair_disabled_disabled {
 }
 
 macro_rules! impl_pair_dual_enabled_enabled {
-    ($Pair:ident, $master:ident, $slave:ident, $MasterChannel:ident, $SlaveChannel:ident) => {
+    ($Pair:ident, $master:ident, $slave:ident, $MasterChannelRef:ident, $SlaveChannelRef:ident) => {
         impl $Pair<Dual, Enabled, Enabled> {
             /// Sets the sequences for regular conversion.
             ///
@@ -363,8 +363,8 @@ macro_rules! impl_pair_dual_enabled_enabled {
             /// In the case of `Err`, `self` is returned unchanged.
             pub fn with_sequences<'m, 's>(
                 self,
-                master_sequence: &[$MasterChannel<'m>],
-                slave_sequence: &[$SlaveChannel<'s>],
+                master_sequence: &[$MasterChannelRef<'m>],
+                slave_sequence: &[$SlaveChannelRef<'s>],
             ) -> Result<
                 $Pair<Dual, WithSequence<'m>, WithSequence<'s>>,
                 ($Pair<Dual, Enabled, Enabled>, DualSequenceError),

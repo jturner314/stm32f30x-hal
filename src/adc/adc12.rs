@@ -1,6 +1,6 @@
 //! Wrappers for ADC1 and ADC2.
 
-pub use self::channels::{Adc12Channels, Adc1Channel, Adc1ChannelId, Adc2Channel, Adc2ChannelId};
+pub use self::channels::{Adc12Channels, Adc1ChannelRef, Adc1ChannelId, Adc2ChannelRef, Adc2ChannelId};
 
 use super::*;
 use prelude::*;
@@ -115,7 +115,7 @@ impl_pair_unpowered_unpowered!(Adc12, Adc1, Adc2, adc1, adc2);
 
 impl_pair_disabled_disabled!(Adc12, Adc1, Adc2, adc1, adc2);
 
-impl_pair_dual_enabled_enabled!(Adc12, adc1, adc2, Adc1Channel, Adc2Channel);
+impl_pair_dual_enabled_enabled!(Adc12, adc1, adc2, Adc1ChannelRef, Adc2ChannelRef);
 
 impl_pair_withsequence_withsequence!(
     Adc12,
@@ -139,8 +139,8 @@ impl_single_unpowered!(Adc2);
 impl_single_disabled!(Adc1);
 impl_single_disabled!(Adc2);
 
-impl_single_enabled!(Adc1, Adc1Channel);
-impl_single_enabled!(Adc2, Adc2Channel);
+impl_single_enabled!(Adc1, Adc1ChannelRef);
+impl_single_enabled!(Adc2, Adc2ChannelRef);
 
 impl_single_with_sequence!(Adc1, Adc1ChannelId);
 impl_single_with_sequence!(Adc2, Adc2ChannelId);
@@ -268,40 +268,40 @@ pub mod channels {
 
     define_impl_internalref!(Adc12);
 
-    /// An ADC1 channel that has borrowed the necessary pins to be able to
+    /// A reference to an ADC1 channel and the necessary pins to be able to
     /// perform an ADC conversion.
     ///
-    /// The only way to produce an `Adc1Channel` is through the `From`
-    /// trait implementations; this ensures that while you have an
-    /// `Adc1Channel` instance, the necessary pins are borrowed. It is not
-    /// possible to copy/clone an `Adc1Channel` because the borrows could
-    /// have been mutable.
-    pub struct Adc1Channel<'a> {
+    /// The only way to produce an `Adc1ChannelRef` is through the `From` trait
+    /// implementations; this ensures that while you have an `Adc1ChannelRef`
+    /// instance, the channel singleton and necessary pins are borrowed. It is
+    /// not possible to copy/clone an `Adc1ChannelRef` because the borrows
+    /// could have been mutable.
+    pub struct Adc1ChannelRef<'a> {
         id: Adc1ChannelId,
         life: PhantomData<&'a ()>,
     }
 
-    impl<'a> Adc1Channel<'a> {
+    impl<'a> Adc1ChannelRef<'a> {
         /// Returns the channel ID.
         pub fn id(&self) -> Adc1ChannelId {
             self.id
         }
     }
 
-    /// An ADC2 channel that has borrowed the necessary pins to be able to
+    /// A reference to an ADC2 channel and the necessary pins to be able to
     /// perform an ADC conversion.
     ///
-    /// The only way to produce an `Adc2Channel` is through the `From`
-    /// trait implementations; this ensures that while you have an
-    /// `Adc2Channel` instance, the necessary pins are borrowed. It is not
-    /// possible to copy/clone an `Adc2Channel` because the borrows could
-    /// have been mutable.
-    pub struct Adc2Channel<'a> {
+    /// The only way to produce an `Adc2ChannelRef` is through the `From` trait
+    /// implementations; this ensures that while you have an `Adc2ChannelRef`
+    /// instance, the channel singleton and necessary pins are borrowed. It is
+    /// not possible to copy/clone an `Adc2ChannelRef` because the borrows
+    /// could have been mutable.
+    pub struct Adc2ChannelRef<'a> {
         id: Adc2ChannelId,
         life: PhantomData<&'a ()>,
     }
 
-    impl<'a> Adc2Channel<'a> {
+    impl<'a> Adc2ChannelRef<'a> {
         /// Returns the channel ID.
         pub fn id(&self) -> Adc2ChannelId {
             self.id
@@ -422,60 +422,60 @@ pub mod channels {
         }
     }
 
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In1, PA0, PA1);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In2, PA1, PA2);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In3, PA2, PA3);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In4, PA3, PF4);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc1In5, PF4, PC0);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In6, PC0, PC1);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In7, PC1, PC2);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In8, PC2, PC3);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In9, PC3, PF2);
-    impl_channel_from_pins!(Adc1Channel, Adc1ChannelId, Adc12In10, PF2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In1, PA0, PA1);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In2, PA1, PA2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In3, PA2, PA3);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In4, PA3, PF4);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In5, PF4, PC0);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In10, PF2);
 
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In1, PA4, PA5);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In2, PA5, PA6);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In3, PA6, PA7);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In4, PA7, PC4);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In5, PC4, PC0);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In6, PC0, PC1);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In7, PC1, PC2);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In8, PC2, PC3);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In9, PC3, PF2);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc12In10, PF2, PC5);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In11, PC5, PB2);
-    impl_channel_from_pins!(Adc2Channel, Adc2ChannelId, Adc2In12, PB2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In1, PA4, PA5);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In2, PA5, PA6);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In3, PA6, PA7);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In4, PA7, PC4);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In5, PC4, PC0);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In10, PF2, PC5);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In11, PC5, PB2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In12, PB2);
 
-    impl<'a> From<&'a TemperatureSensor> for Adc1Channel<'a> {
-        fn from(_: &'a TemperatureSensor) -> Adc1Channel<'a> {
-            Adc1Channel {
+    impl<'a> From<&'a TemperatureSensor> for Adc1ChannelRef<'a> {
+        fn from(_: &'a TemperatureSensor) -> Adc1ChannelRef<'a> {
+            Adc1ChannelRef {
                 id: Adc1ChannelId::TemperatureSensor,
                 life: PhantomData,
             }
         }
     }
 
-    impl<'a> From<&'a HalfBattery> for Adc1Channel<'a> {
-        fn from(_: &'a HalfBattery) -> Adc1Channel<'a> {
-            Adc1Channel {
+    impl<'a> From<&'a HalfBattery> for Adc1ChannelRef<'a> {
+        fn from(_: &'a HalfBattery) -> Adc1ChannelRef<'a> {
+            Adc1ChannelRef {
                 id: Adc1ChannelId::HalfBattery,
                 life: PhantomData,
             }
         }
     }
 
-    impl<'a> From<&'a mut InternalRef> for Adc1Channel<'a> {
-        fn from(_: &'a mut InternalRef) -> Adc1Channel<'a> {
-            Adc1Channel {
+    impl<'a> From<&'a mut InternalRef> for Adc1ChannelRef<'a> {
+        fn from(_: &'a mut InternalRef) -> Adc1ChannelRef<'a> {
+            Adc1ChannelRef {
                 id: Adc1ChannelId::InternalRef,
                 life: PhantomData,
             }
         }
     }
 
-    impl<'a> From<&'a mut InternalRef> for Adc2Channel<'a> {
-        fn from(_: &'a mut InternalRef) -> Adc2Channel<'a> {
-            Adc2Channel {
+    impl<'a> From<&'a mut InternalRef> for Adc2ChannelRef<'a> {
+        fn from(_: &'a mut InternalRef) -> Adc2ChannelRef<'a> {
+            Adc2ChannelRef {
                 id: Adc2ChannelId::InternalRef,
                 life: PhantomData,
             }
