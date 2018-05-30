@@ -14,6 +14,7 @@ extern crate strong_scope_guard;
 
 use cortex_m::asm;
 use hal::adc;
+use hal::adc::adc12::Adc12;
 use hal::adc::adc12::channels::{Adc1Channel, Adc2Channel};
 use hal::delay::Delay;
 use hal::dma::{dma1, DmaExt, Priority};
@@ -47,8 +48,8 @@ fn main() -> ! {
             .split(stm32_periph.ADC1, stm32_periph.ADC2, &mut rcc.ahb, clocks);
 
     // Configure ADC1.
-    let mut adc12 = adc12.map_adc1(|unpowered| {
-        let mut disabled = unpowered.power_on(&mut delay);
+    let adc1 = {
+        let mut disabled = adc12.adc1.power_on(&mut delay);
         disabled.calibrate_single_ended(&mut delay);
         let mut enabled = disabled.enable();
         enabled.set_alignment(adc::Alignment::Right);
@@ -56,32 +57,33 @@ fn main() -> ! {
         unsafe {
             enabled.with_sequence_unchecked(&[Adc1Channel::from((&adc12_channels.adc1_in1, &pa0))])
         }
-    });
+    };
 
     // DMA with a single ADC.
     let mut buf: [u16; 8] = [7; 8];
     iprintln!(&mut itm.stim[0], "buf (before) = {:?}", buf);
-    let (adc12, mut dma1_chan1) = scope!(|guard| {
+    let (adc1, mut dma1_chan1) = scope!(|guard| {
         dma1_chan1.set_priority(Priority::VeryHigh);
-        let running = adc12.adc1.start_dma(&mut buf, guard, dma1_chan1);
+        let running = adc1.start_dma(&mut buf, guard, dma1_chan1);
         // Can do other things here while the ADC and DMA are running.
-        let (stopped, dma1_chan1, _, _) = running.wait();
-        adc12.adc1 = stopped;
-        (adc12, dma1_chan1)
+        let (adc1, dma1_chan1, _, _) = running.wait();
+        (adc1, dma1_chan1)
     });
     iprintln!(&mut itm.stim[0], "buf (after) = {:?}", buf);
 
     // Configure the ADCs in dual mode.
-    let mut adc12 = adc12.map_adc2(|adc2| adc2.power_on(&mut delay));
-    adc12.adc2.calibrate_single_ended(&mut delay);
-    let adc12 = adc12.map_adc1(|adc1| adc1.drop_sequence().disable());
-    let mut adc12 = adc12.into_dual().enable_both();
+    let adc1 = adc1.drop_sequence().disable();
+    let mut adc2 = adc12.adc2.power_on(&mut delay);
+    adc2.calibrate_single_ended(&mut delay);
+    let mut adc12 = Adc12 { adc1, adc2 }.into_dual().enable();
     adc12.adc2.set_alignment(adc::Alignment::Right);
     adc12.adc2.set_resolution(adc::Resolution::Bit12);
-    let adc12 = adc12.with_sequences(
-        &[Adc1Channel::from((&adc12_channels.adc1_in1, &pa0))],
-        &[Adc2Channel::from((&adc12_channels.adc2_in3, &pa6))],
-    ).unwrap_or_else(|_| panic!());
+    let adc12 = adc12
+        .with_sequences(
+            &[Adc1Channel::from((&adc12_channels.adc1_in1, &pa0))],
+            &[Adc2Channel::from((&adc12_channels.adc2_in3, &pa6))],
+        )
+        .unwrap_or_else(|_| panic!());
 
     // DMA with dual ADCs.
     let mut buf: [[u16; 2]; 8] = [[1, 2]; 8];

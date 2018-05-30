@@ -212,29 +212,55 @@ pub mod adc12 {
         ) -> (Adc12<Independent, Unpowered, Unpowered>, Adc12Channels);
     }
 
-    /// ADC1 and ADC2 pair.
-    pub struct Adc12<PairState, Adc1State, Adc2State> {
-        reg: stm32f30x::ADC1_2,
-        /// ADC1.
-        pub adc1: Adc1<PairState, Adc1State>,
-        /// ADC2.
-        pub adc2: Adc2<PairState, Adc2State>,
-    }
-
     /// ADC1 wrapper.
-    pub struct Adc1<PairState, State> {
+    ///
+    /// `P` is the state of the ADC pair, and `S` is the state of this ADC.
+    pub struct Adc1<P, S> {
         clock_freq: Hertz,
         reg: stm32f30x::ADC1,
-        pair_state: PhantomData<PairState>,
-        state: State,
+        pair_state: PhantomData<P>,
+        state: S,
     }
 
     /// ADC2 wrapper.
-    pub struct Adc2<PairState, State> {
+    ///
+    /// `P` is the state of the ADC pair, and `S` is the state of this ADC.
+    pub struct Adc2<P, S> {
         clock_freq: Hertz,
         reg: stm32f30x::ADC2,
-        pair_state: PhantomData<PairState>,
-        state: State,
+        pair_state: PhantomData<P>,
+        state: S,
+    }
+
+    /// ADC1 and ADC2 pair.
+    ///
+    /// `P` is the state of the ADC pair, `S1` is the state of ADC1, and `S2`
+    /// is the state of ADC2.
+    pub struct Adc12<P, S1, S2> {
+        /// ADC1.
+        pub adc1: Adc1<P, S1>,
+        /// ADC2.
+        pub adc2: Adc2<P, S2>,
+    }
+
+    impl<P, S1, S2> Adc12<P, S1, S2> {
+        // /// Returns the CSR register.
+        // fn csr(&self) -> &stm32f30x::adc1_2::CSR {
+        //     // The pair of ADCs has exclusive access to its common registers.
+        //     unsafe { &(*stm32f30x::ADC1_2::ptr()).csr }
+        // }
+
+        /// Returns the CCR register.
+        fn ccr_mut(&mut self) -> &stm32f30x::adc1_2::CCR {
+            // The pair of ADCs has exclusive access to its common registers.
+            unsafe { &(*stm32f30x::ADC1_2::ptr()).ccr }
+        }
+
+        /// Returns the CDR register.
+        fn cdr(&self) -> &stm32f30x::adc1_2::CDR {
+            // The pair of ADCs has exclusive access to its common registers.
+            unsafe { &(*stm32f30x::ADC1_2::ptr()).cdr }
+        }
     }
 
     /// Continuous iterator over regular conversions in dual simultaneous mode.
@@ -247,7 +273,7 @@ pub mod adc12 {
 
         fn next(&mut self) -> Option<(u16, u16)> {
             while self.adc12.adc1.reg.isr.read().eoc().bit_is_clear() {}
-            let common_data = self.adc12.reg.cdr.read();
+            let common_data = self.adc12.cdr().read();
             // Manually clear EOC flag since the hardware doesn't
             // automatically do so when reading CDR.
             self.adc12.adc1.reg.isr.write(|w| w.eoc().set_bit());
@@ -258,44 +284,20 @@ pub mod adc12 {
         }
     }
 
-    impl<PairState, Adc1State, Adc2State> Adc12<PairState, Adc1State, Adc2State> {
+    impl<P, S1, S2> Adc12<P, S1, S2> {
         /// Returns the ADC clock frequency.
         ///
         /// This value is shared for both ADCs in the pair.
         pub fn clock_freq(&self) -> Hertz {
             self.adc1.clock_freq
         }
-
-        /// Map ADC1. (This allows changing its state.)
-        pub fn map_adc1<F, S>(self, f: F) -> Adc12<PairState, S, Adc2State>
-        where
-            F: FnOnce(Adc1<PairState, Adc1State>) -> Adc1<PairState, S>,
-        {
-            Adc12 {
-                reg: self.reg,
-                adc1: f(self.adc1),
-                adc2: self.adc2,
-            }
-        }
-
-        /// Map ADC2. (This allows changing its state.)
-        pub fn map_adc2<F, S>(self, f: F) -> Adc12<PairState, Adc1State, S>
-        where
-            F: FnOnce(Adc2<PairState, Adc2State>) -> Adc2<PairState, S>,
-        {
-            Adc12 {
-                reg: self.reg,
-                adc1: self.adc1,
-                adc2: f(self.adc2),
-            }
-        }
     }
 
-    impl<PairState> Adc12<PairState, Unpowered, Unpowered> {
+    impl<P> Adc12<P, Unpowered, Unpowered> {
         /// Enable voltage regulator for both ADCs.
         ///
         /// This avoids having to wait 10 us for each ADC separately.
-        pub fn power_both_on(self, delay: &mut Delay) -> Adc12<PairState, Disabled, Disabled> {
+        pub fn power_on(self, delay: &mut Delay) -> Adc12<P, Disabled, Disabled> {
             self.adc1
                 .reg
                 .cr
@@ -314,7 +316,6 @@ pub mod adc12 {
                 .write(|w| w.deeppwd().clear_bit().advregen().set_bit());
             delay.delay_us(10u8);
             Adc12 {
-                reg: self.reg,
                 adc1: Adc1 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
@@ -331,15 +332,13 @@ pub mod adc12 {
         }
     }
 
-    impl<PairState> Adc12<PairState, Disabled, Disabled> {
+    impl<P> Adc12<P, Disabled, Disabled> {
         /// Enables independent mode.
-        pub fn into_independent(self) -> Adc12<Independent, Disabled, Disabled> {
+        pub fn into_independent(mut self) -> Adc12<Independent, Disabled, Disabled> {
             const INDEPENDENT: u8 = 0b00000;
-            self.reg
-                .ccr
+            self.ccr_mut()
                 .modify(|_, w| unsafe { w.mult().bits(INDEPENDENT) });
             Adc12 {
-                reg: self.reg,
                 adc1: Adc1 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
@@ -356,13 +355,11 @@ pub mod adc12 {
         }
 
         /// Enables dual mode.
-        pub fn into_dual(self) -> Adc12<Dual, Disabled, Disabled> {
+        pub fn into_dual(mut self) -> Adc12<Dual, Disabled, Disabled> {
             const REG_SIMUL_INJ_SIMUL: u8 = 0b00001;
-            self.reg
-                .ccr
+            self.ccr_mut()
                 .modify(|_, w| unsafe { w.mult().bits(REG_SIMUL_INJ_SIMUL) });
             Adc12 {
-                reg: self.reg,
                 adc1: Adc1 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
@@ -382,14 +379,13 @@ pub mod adc12 {
         ///
         /// This avoids waiting separately for each ADC to finish its
         /// initialization sequence.
-        pub fn enable_both(self) -> Adc12<PairState, Enabled, Enabled> {
+        pub fn enable(self) -> Adc12<P, Enabled, Enabled> {
             self.adc1.reg.cr.modify(|_, w| w.aden().set_bit());
             self.adc2.reg.cr.modify(|_, w| w.aden().set_bit());
             while self.adc1.reg.isr.read().adrdy().bit_is_clear()
                 && self.adc2.reg.isr.read().adrdy().bit_is_clear()
             {}
             Adc12 {
-                reg: self.reg,
                 adc1: Adc1 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
@@ -440,7 +436,6 @@ pub mod adc12 {
                 }
             }
             Ok(Adc12 {
-                reg: self.reg,
                 adc1: unsafe { self.adc1.with_sequence_unchecked(adc1_sequence) },
                 adc2: unsafe { self.adc2.with_sequence_unchecked(adc2_sequence) },
             })
@@ -480,7 +475,7 @@ pub mod adc12 {
             self.adc1.reg.cr.modify(|_, w| w.adstart().set_bit());
             for i in 0..seq_len {
                 while self.adc1.reg.isr.read().eoc().bit_is_clear() {}
-                let common_data = self.reg.cdr.read();
+                let common_data = self.cdr().read();
                 // Manually clear EOC flag since the hardware doesn't
                 // automatically do so when reading CDR.
                 self.adc1.reg.isr.write(|w| w.eoc().set_bit());
@@ -560,10 +555,10 @@ pub mod adc12 {
         /// This method uses auto-delayed conversion mode (AUTDLY) to avoid
         /// overruns.
         pub fn start_dma<'body, 'scope, D>(
-            self,
+            mut self,
             buf: &'scope mut [[u16; 2]],
             mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
-            dma: D,
+            dma_tok: D,
         ) -> Adc12<
             Dual,
             RunningDmaMaster<'seq1, 'body, 'scope, D::Channel>,
@@ -587,7 +582,7 @@ pub mod adc12 {
             });
             // Clear the MDMA bits to reset any pending DMA requests from this
             // ADC pair.
-            self.reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+            self.ccr_mut().modify(|_, w| unsafe { w.mdma().bits(0b00) });
             // Clear overrun, end-of-conversion, and end-of-sequence flags.
             self.adc1.reg.isr.write(|w| {
                 w.ovr().set_bit();
@@ -625,16 +620,15 @@ pub mod adc12 {
             }
 
             // Configure and enable the DMA transfer.
-            self.reg.ccr.modify(|_, w| {
+            self.ccr_mut().modify(|_, w| {
                 unsafe { w.mdma().bits(0b10) };
                 w.dmacfg().clear_bit() // one-shot mode
             });
-            let data_reg = &(*self.reg).cdr as *const _ as *const [u16; 2];
-            let transfer = unsafe { dma.channel().enable_periph_to_mem(guard, data_reg, buf) };
+            let data_reg = self.cdr() as *const _ as *const [u16; 2];
+            let transfer = unsafe { dma_tok.channel().enable_periph_to_mem(guard, data_reg, buf) };
 
             self.adc1.reg.cr.modify(|_, w| w.adstart().set_bit());
             Adc12 {
-                reg: self.reg,
                 adc1: Adc1 {
                     clock_freq: self.adc1.clock_freq,
                     reg: self.adc1.reg,
@@ -675,53 +669,68 @@ pub mod adc12 {
             ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
             &'scope mut [[u16; 2]],
         ) {
+            let Adc12 { adc1, adc2 } = self;
             // Wait for DMA transfer to finish.
-            let (chan, mut guard, buf) = self.adc1.state.transfer.wait();
+            let (chan, mut guard, buf) = adc1.state.transfer.wait();
             // The hardware should automatically stop the ADCs. This loop is in
             // case it takes a little while to stop the ADCs after the DMA
             // transfer has completed. (The reference manual does not specify
             // whether this is necessary.)
-            while self.adc1.reg.cr.read().adstart().bit_is_set() {}
+            while adc1.reg.cr.read().adstart().bit_is_set() {}
+            // Put the ADCs back together so that we can access `.ccr_mut()`.
+            let mut adc12 = Adc12 {
+                adc1: Adc1 {
+                    clock_freq: adc1.clock_freq,
+                    reg: adc1.reg,
+                    pair_state: adc1.pair_state,
+                    state: WithSequence {
+                        life: adc1.state.seq,
+                    },
+                },
+                adc2: Adc2 {
+                    clock_freq: adc2.clock_freq,
+                    reg: adc2.reg,
+                    pair_state: adc2.pair_state,
+                    state: WithSequence {
+                        life: adc2.state.seq,
+                    },
+                },
+            };
             // Disable generation of DMA requests.
-            self.reg.ccr.modify(|_, w| unsafe { w.mdma().bits(0b00) });
+            adc12
+                .ccr_mut()
+                .modify(|_, w| unsafe { w.mdma().bits(0b00) });
             // Remove guard handler.
             if let Some(handler) = guard.handler_mut() {
                 handler.set_periph(None);
             }
             // There should never be an overrun in auto-delayed mode.
-            debug_assert!(self.adc1.reg.isr.read().ovr().bit_is_clear());
-            (
-                Adc12 {
-                    reg: self.reg,
-                    adc1: Adc1 {
-                        clock_freq: self.adc1.clock_freq,
-                        reg: self.adc1.reg,
-                        pair_state: self.adc1.pair_state,
-                        state: WithSequence {
-                            life: self.adc1.state.seq,
-                        },
-                    },
-                    adc2: Adc2 {
-                        clock_freq: self.adc2.clock_freq,
-                        reg: self.adc2.reg,
-                        pair_state: self.adc2.pair_state,
-                        state: WithSequence {
-                            life: self.adc2.state.seq,
-                        },
-                    },
-                },
-                chan,
-                guard,
-                buf,
-            )
+            debug_assert!(adc12.adc1.reg.isr.read().ovr().bit_is_clear());
+
+            (adc12, chan, guard, buf)
         }
     }
 
+    macro_rules! impl_single_any {
+        ($Adci:ident) => {
+            impl<P, S> $Adci<P, S> {
+                /// Returns the ADC clock frequency.
+                ///
+                /// This value is shared for both ADCs in the pair.
+                pub fn clock_freq(&self) -> Hertz {
+                    self.clock_freq
+                }
+            }
+        };
+    }
+    impl_single_any!(Adc1);
+    impl_single_any!(Adc2);
+
     macro_rules! impl_single_unpowered {
         ($adc:ident) => {
-            impl<PairState> $adc<PairState, Unpowered> {
+            impl<P> $adc<P, Unpowered> {
                 /// Enable ADC voltage regulator.
-                pub fn power_on(self, delay: &mut Delay) -> $adc<PairState, Disabled> {
+                pub fn power_on(self, delay: &mut Delay) -> $adc<P, Disabled> {
                     // Enable ADC voltage regulator.
                     self.reg
                         .cr
@@ -746,7 +755,7 @@ pub mod adc12 {
 
     macro_rules! impl_single_disabled {
         ($adc:ident) => {
-            impl<PairState> $adc<PairState, Disabled> {
+            impl<P> $adc<P, Disabled> {
                 /// Calibrates the ADC for single-ended inputs.
                 pub fn calibrate_single_ended(&mut self, delay: &mut Delay) {
                     debug_assert!(self.reg.cr.read().aden().bit_is_clear());
@@ -774,7 +783,7 @@ pub mod adc12 {
                 }
 
                 /// Enables the ADC. It should be calibrated first.
-                pub fn enable(self) -> $adc<PairState, Enabled> {
+                pub fn enable(self) -> $adc<P, Enabled> {
                     self.reg.cr.modify(|_, w| w.aden().set_bit());
                     while self.reg.isr.read().adrdy().bit_is_clear() {}
                     $adc {
@@ -792,7 +801,7 @@ pub mod adc12 {
 
     macro_rules! impl_single_enabled {
         ($adc:ident, $channel:ident) => {
-            impl<PairState> $adc<PairState, Enabled> {
+            impl<P> $adc<P, Enabled> {
                 /// Sets the data alignment.
                 pub fn set_alignment(&mut self, align: Alignment) {
                     debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
@@ -835,7 +844,7 @@ pub mod adc12 {
                 pub unsafe fn with_sequence_unchecked<'a>(
                     self,
                     sequence: &[$channel<'a>],
-                ) -> $adc<PairState, WithSequence<'a>> {
+                ) -> $adc<P, WithSequence<'a>> {
                     debug_assert!(self.reg.cr.read().aden().bit_is_set());
                     debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
                     assert!(sequence.len() > 0);
@@ -934,7 +943,7 @@ pub mod adc12 {
 
                 /// Disables the ADC.
                 // TODO: Enable this in the `WithSequence` state.
-                pub fn disable(self) -> $adc<PairState, Disabled> {
+                pub fn disable(self) -> $adc<P, Disabled> {
                     debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
                     debug_assert!(self.reg.cr.read().jadstart().bit_is_clear());
                     self.reg.cr.modify(|_, w| w.addis().set_bit());
@@ -955,7 +964,7 @@ pub mod adc12 {
 
     macro_rules! impl_single_with_sequence {
         ($adc:ident, $id:ident) => {
-            impl<'a, PairState> $adc<PairState, WithSequence<'a>> {
+            impl<'a, P> $adc<P, WithSequence<'a>> {
                 /// Returns the number of channels in the regular conversion sequence.
                 pub fn sequence_len(&self) -> u8 {
                     self.reg.sqr1.read().l3().bits() + 1
@@ -1023,7 +1032,7 @@ pub mod adc12 {
                 }
 
                 /// Drops the borrow of the sequence pins.
-                pub fn drop_sequence(self) -> $adc<PairState, Enabled> {
+                pub fn drop_sequence(self) -> $adc<P, Enabled> {
                     $adc {
                         clock_freq: self.clock_freq,
                         reg: self.reg,
@@ -1086,7 +1095,7 @@ pub mod adc12 {
                     self,
                     buf: &'scope mut [u16],
                     mut guard: ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
-                    dma: D,
+                    dma_tok: D,
                 ) -> $Adc<Independent, RunningDma<'seq, 'body, 'scope, D::Channel>>
                 where
                     'seq: 'scope,
@@ -1145,7 +1154,7 @@ pub mod adc12 {
                         w.dmacfg().clear_bit() // one-shot mode
                     });
                     let data_reg = &(*self.reg).dr as *const _ as *const u32;
-                    let transfer = unsafe { dma.channel().enable_periph_to_mem(guard, data_reg, buf) };
+                    let transfer = unsafe { dma_tok.channel().enable_periph_to_mem(guard, data_reg, buf) };
 
                     self.reg.cr.modify(|_, w| w.adstart().set_bit());
                     $Adc {
@@ -1210,7 +1219,7 @@ pub mod adc12 {
     impl_single_independent_running_dma!(Adc1, dma::dma1::Channel1);
     impl_single_independent_running_dma!(Adc2, dma::dma2::Channel1);
 
-    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc1<PairState, State>>
+    unsafe impl<'scope, P, S> AdcDmaTokens<'scope, Adc1<P, S>>
         for dma::dma1::Channel1
     {
         type Channel = dma::dma1::Channel1;
@@ -1219,7 +1228,7 @@ pub mod adc12 {
         }
     }
 
-    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc2<PairState, State>>
+    unsafe impl<'scope, P, S> AdcDmaTokens<'scope, Adc2<P, S>>
         for (
             dma::dma2::Channel1,
             &'scope syscfg::Adc24DmaRemap<syscfg::NotRemapped>,
@@ -1231,7 +1240,7 @@ pub mod adc12 {
         }
     }
 
-    unsafe impl<'scope, PairState, State> AdcDmaTokens<'scope, Adc2<PairState, State>>
+    unsafe impl<'scope, P, S> AdcDmaTokens<'scope, Adc2<P, S>>
         for (
             dma::dma2::Channel3,
             &'scope syscfg::Adc24DmaRemap<syscfg::Remapped>,
@@ -1289,13 +1298,13 @@ pub mod adc12 {
             _0: (),
         }
 
-        impl<PairState> Adc12<PairState, Disabled, Disabled> {
+        impl<P> Adc12<P, Disabled, Disabled> {
             /// Enables the temperature sensor and returns a handle to it.
             ///
             /// Returns `None` if the temperature sensor is already enabled.
             pub fn enable_temperature_sensor(&mut self) -> Option<TemperatureSensor> {
                 let mut already_enabled = false;
-                self.reg.ccr.modify(|r, w| {
+                self.ccr_mut().modify(|r, w| {
                     if r.tsen().bit_is_set() {
                         already_enabled = true;
                     } else {
@@ -1312,7 +1321,7 @@ pub mod adc12 {
 
             /// Disables the temperature sensor.
             pub fn disable_temperature_sensor(&mut self, _: TemperatureSensor) {
-                self.reg.ccr.modify(|_, w| w.tsen().clear_bit());
+                self.ccr_mut().modify(|_, w| w.tsen().clear_bit());
             }
 
             /// Enables the battery voltage sensor and returns a handle to it.
@@ -1320,7 +1329,7 @@ pub mod adc12 {
             /// Returns `None` if the battery voltage sensor is already enabled.
             pub fn enable_battery_sensor(&mut self) -> Option<HalfBattery> {
                 let mut already_enabled = false;
-                self.reg.ccr.modify(|r, w| {
+                self.ccr_mut().modify(|r, w| {
                     if r.vbaten().bit_is_set() {
                         already_enabled = true;
                     } else {
@@ -1337,7 +1346,7 @@ pub mod adc12 {
 
             /// Disables the battery voltage sensor.
             pub fn disable_battery_sensor(&mut self, _: HalfBattery) {
-                self.reg.ccr.modify(|_, w| w.vbaten().clear_bit());
+                self.ccr_mut().modify(|_, w| w.vbaten().clear_bit());
             }
 
             /// Enables the internal reference voltage and returns a handle to
@@ -1350,7 +1359,7 @@ pub mod adc12 {
                     if unsafe { INTERNAL_REF_ENABLED } {
                         None
                     } else {
-                        self.reg.ccr.modify(|_, w| w.vrefen().set_bit());
+                        self.ccr_mut().modify(|_, w| w.vrefen().set_bit());
                         unsafe { INTERNAL_REF_ENABLED = true };
                         Some(InternalRef { _0: () })
                     }
@@ -1360,7 +1369,7 @@ pub mod adc12 {
             /// Disables the internal reference voltage.
             pub fn disable_internal_ref(&mut self, _: InternalRef) {
                 cortex_m::interrupt::free(|_| {
-                    self.reg.ccr.modify(|_, w| w.vrefen().clear_bit());
+                    self.ccr_mut().modify(|_, w| w.vrefen().clear_bit());
                     unsafe { INTERNAL_REF_ENABLED = false };
                 });
             }
@@ -1635,7 +1644,6 @@ pub mod adc12 {
                 let clock_freq = clocks.hclk() / 2;
                 (
                     Adc12 {
-                        reg: self,
                         adc1: Adc1 {
                             clock_freq,
                             reg: adc1,
@@ -1778,118 +1786,118 @@ pub mod adc12 {
         }
 
         /// ADC1_IN1
-        pub struct Adc1In1<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In1<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN2
-        pub struct Adc1In2<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In2<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN3
-        pub struct Adc1In3<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In3<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN4
-        pub struct Adc1In4<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In4<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN5 (not available on all devices)
-        pub struct Adc1In5<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In5<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN11 (not available on all devices)
-        pub struct Adc1In11<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In11<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN12 (not available on all devices)
-        pub struct Adc1In12<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In12<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC1_IN13 (not available on all devices)
-        pub struct Adc1In13<State> {
-            _state: PhantomData<State>,
+        pub struct Adc1In13<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN1
-        pub struct Adc2In1<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In1<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN2
-        pub struct Adc2In2<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In2<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN3
-        pub struct Adc2In3<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In3<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN4
-        pub struct Adc2In4<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In4<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN5
-        pub struct Adc2In5<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In5<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN11
-        pub struct Adc2In11<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In11<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN12
-        pub struct Adc2In12<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In12<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN13 (not available on all devices)
-        pub struct Adc2In13<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In13<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN14 (not available on all devices)
-        pub struct Adc2In14<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In14<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC2_IN15 (not available on all devices)
-        pub struct Adc2In15<State> {
-            _state: PhantomData<State>,
+        pub struct Adc2In15<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC12_IN6
-        pub struct Adc12In6<State> {
-            _state: PhantomData<State>,
+        pub struct Adc12In6<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC12_IN7
-        pub struct Adc12In7<State> {
-            _state: PhantomData<State>,
+        pub struct Adc12In7<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC12_IN8
-        pub struct Adc12In8<State> {
-            _state: PhantomData<State>,
+        pub struct Adc12In8<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC12_IN9
-        pub struct Adc12In9<State> {
-            _state: PhantomData<State>,
+        pub struct Adc12In9<S> {
+            _state: PhantomData<S>,
         }
 
         /// ADC12_IN10 (not available on all devices)
-        pub struct Adc12In10<State> {
-            _state: PhantomData<State>,
+        pub struct Adc12In10<S> {
+            _state: PhantomData<S>,
         }
 
         macro_rules! impl_channel_conversions {
@@ -1897,10 +1905,10 @@ pub mod adc12 {
                 impl $pos<SingleEnded> {
                     /// Changes the channel to differential mode, where `self` is the
                     /// positive input and `_neg` is the negative input.
-                    pub fn into_differential<PairState>(
+                    pub fn into_differential<P>(
                         self,
                         _neg: $neg<SingleEnded>,
-                        adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                        adc12: &mut Adc12<P, Disabled, Disabled>,
                     ) -> $pos<Differential> {
                         $(
                             adc12.$adc.reg.difsel.modify(|r, w| unsafe {
@@ -1916,9 +1924,9 @@ pub mod adc12 {
 
                 impl $pos<Differential> {
                     /// Changes the channel to single-ended mode.
-                    pub fn into_single_ended<PairState>(
+                    pub fn into_single_ended<P>(
                         self,
-                        adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                        adc12: &mut Adc12<P, Disabled, Disabled>,
                     ) -> ($pos<SingleEnded>, $neg<SingleEnded>) {
                         $(
                             adc12.$adc.reg.difsel.modify(|r, w| unsafe {
@@ -1965,10 +1973,10 @@ pub mod adc12 {
         impl Adc12In10<SingleEnded> {
             /// Changes the channel to differential mode, where `self` is the
             /// positive input and `_neg` are the negative inputs.
-            pub fn into_differential<PairState>(
+            pub fn into_differential<P>(
                 self,
                 _neg: (Adc1In11<SingleEnded>, Adc2In11<SingleEnded>),
-                adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                adc12: &mut Adc12<P, Disabled, Disabled>,
             ) -> Adc12In10<Differential> {
                 const CHANNEL_NUM: u8 = 10;
                 adc12.adc1.reg.difsel.modify(|r, w| unsafe {
@@ -1987,9 +1995,9 @@ pub mod adc12 {
 
         impl Adc12In10<Differential> {
             /// Changes the channel to single-ended mode.
-            pub fn into_single_ended<PairState>(
+            pub fn into_single_ended<P>(
                 self,
-                adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                adc12: &mut Adc12<P, Disabled, Disabled>,
             ) -> (
                 Adc12In10<SingleEnded>,
                 (Adc1In11<SingleEnded>, Adc2In11<SingleEnded>),
@@ -2025,11 +2033,11 @@ pub mod adc12 {
                     /// Changes the channels to differential mode, where `self` and
                     /// `_other_pos` are the positive inputs and `_neg` is the negative
                     /// input.
-                    pub fn both_into_differential<PairState>(
+                    pub fn both_into_differential<P>(
                         self,
                         _other_pos: $other_pos<SingleEnded>,
                         _neg: $neg<SingleEnded>,
-                        adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                        adc12: &mut Adc12<P, Disabled, Disabled>,
                     ) -> ($this_pos<Differential>, $other_pos<Differential>) {
                         adc12.adc1.reg.difsel.modify(|r, w| unsafe {
                             w.difsel_1_15()
@@ -2052,10 +2060,10 @@ pub mod adc12 {
 
                 impl $this_pos<Differential> {
                     /// Changes the channels to single-ended mode.
-                    pub fn both_into_single_ended<PairState>(
+                    pub fn both_into_single_ended<P>(
                         self,
                         _other: $other_pos<Differential>,
-                        adc12: &mut Adc12<PairState, Disabled, Disabled>,
+                        adc12: &mut Adc12<P, Disabled, Disabled>,
                     ) -> (
                         ($this_pos<SingleEnded>, $other_pos<SingleEnded>),
                         $neg<SingleEnded>,
