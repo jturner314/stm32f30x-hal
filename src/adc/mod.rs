@@ -20,6 +20,11 @@ use syscfg;
 /// reference to it).
 static mut INTERNAL_REF_ENABLED: bool = false;
 
+/// Channel is in single-ended mode.
+pub struct SingleEnded;
+/// Channel is in differential mode.
+pub struct Differential;
+
 /// ADC voltage regulator has not been powered on yet.
 #[derive(Debug)]
 pub struct Unpowered {}
@@ -1155,6 +1160,48 @@ macro_rules! impl_single_independent_running_dma {
                     guard,
                     buf,
                 )
+            }
+        }
+    };
+}
+
+macro_rules! define_impl_internalref {
+    ($Pair:ident) => {
+        /// Internal reference voltage (V_REFINT).
+        ///
+        /// Note that there are different `InternalRef` types for ADC1/2 and
+        /// ADC3/4, but it's not possible to get more than one `InternalRef`
+        /// instance at a time. (For example, once you get an `InternalRef`
+        /// instance for ADC1/2, you cannot get one for ADC3/4 until the one
+        /// for ADC1/2 is dropped.)
+        pub struct InternalRef {
+            _0: (),
+        }
+
+        impl<P> $Pair<P, Disabled, Disabled> {
+            /// Enables the internal reference voltage and returns a handle to
+            /// it.
+            ///
+            /// Returns `None` if the internal reference voltage is already
+            /// enabled on ADC1/2 or ADC3/4.
+            pub fn enable_internal_ref(&mut self) -> Option<InternalRef> {
+                cortex_m::interrupt::free(|_| {
+                    if unsafe { INTERNAL_REF_ENABLED } {
+                        None
+                    } else {
+                        self.ccr_mut().modify(|_, w| w.vrefen().set_bit());
+                        unsafe { INTERNAL_REF_ENABLED = true };
+                        Some(InternalRef { _0: () })
+                    }
+                })
+            }
+
+            /// Disables the internal reference voltage.
+            pub fn disable_internal_ref(&mut self, _: InternalRef) {
+                cortex_m::interrupt::free(|_| {
+                    self.ccr_mut().modify(|_, w| w.vrefen().clear_bit());
+                    unsafe { INTERNAL_REF_ENABLED = false };
+                });
             }
         }
     };

@@ -193,11 +193,6 @@ pub mod channels {
     use gpio::gpioc::{PC0, PC1, PC2, PC3, PC4, PC5};
     use gpio::gpiof::{PF2, PF4};
 
-    /// Channel is in single-ended mode.
-    pub struct SingleEnded;
-    /// Channel is in differential mode.
-    pub struct Differential;
-
     // TODO
     /// Op-amp 1
     pub struct OpAmp1 {
@@ -209,25 +204,6 @@ pub mod channels {
     /// An instance of this type can be obtained from the
     /// `.enable_temperature_sensor()` method on `Adc12`.
     pub struct TemperatureSensor {
-        _0: (),
-    }
-
-    /// Battery voltage sensor (V_BAT/2).
-    ///
-    /// An instance of this type can be obtained from the
-    /// `.enable_battery()` method on `Adc12`.
-    pub struct HalfBattery {
-        _0: (),
-    }
-
-    /// Internal reference voltage (V_REFINT).
-    ///
-    /// Note that there are different `InternalRef` types for ADC1/2 and
-    /// ADC3/4, but it's not possible to get more than one `InternalRef`
-    /// instance at a time. (For example, once you get an `InternalRef`
-    /// instance for ADC1/2, you cannot get one for ADC3/4 until the one
-    /// for ADC1/2 is dropped.)
-    pub struct InternalRef {
         _0: (),
     }
 
@@ -256,7 +232,18 @@ pub mod channels {
         pub fn disable_temperature_sensor(&mut self, _: TemperatureSensor) {
             self.ccr_mut().modify(|_, w| w.tsen().clear_bit());
         }
+    }
 
+
+    /// Battery voltage sensor (V_BAT/2).
+    ///
+    /// An instance of this type can be obtained from the
+    /// `.enable_battery()` method on `Adc12`.
+    pub struct HalfBattery {
+        _0: (),
+    }
+
+    impl<P> Adc12<P, Disabled, Disabled> {
         /// Enables the battery voltage sensor and returns a handle to it.
         ///
         /// Returns `None` if the battery voltage sensor is already enabled.
@@ -281,32 +268,9 @@ pub mod channels {
         pub fn disable_battery_sensor(&mut self, _: HalfBattery) {
             self.ccr_mut().modify(|_, w| w.vbaten().clear_bit());
         }
-
-        /// Enables the internal reference voltage and returns a handle to
-        /// it.
-        ///
-        /// Returns `None` if the internal reference voltage is already
-        /// enabled on ADC1/2 or ADC3/4.
-        pub fn enable_internal_ref(&mut self) -> Option<InternalRef> {
-            cortex_m::interrupt::free(|_| {
-                if unsafe { INTERNAL_REF_ENABLED } {
-                    None
-                } else {
-                    self.ccr_mut().modify(|_, w| w.vrefen().set_bit());
-                    unsafe { INTERNAL_REF_ENABLED = true };
-                    Some(InternalRef { _0: () })
-                }
-            })
-        }
-
-        /// Disables the internal reference voltage.
-        pub fn disable_internal_ref(&mut self, _: InternalRef) {
-            cortex_m::interrupt::free(|_| {
-                self.ccr_mut().modify(|_, w| w.vrefen().clear_bit());
-                unsafe { INTERNAL_REF_ENABLED = false };
-            });
-        }
     }
+
+    define_impl_internalref!(Adc12);
 
     /// An ADC1 channel that has borrowed the necessary pins to be able to
     /// perform an ADC conversion.
