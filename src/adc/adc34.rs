@@ -1,6 +1,9 @@
 //! Wrappers for ADC3 and ADC4.
 
-pub use self::channels::{Adc34Channels, Adc3ChannelRef, Adc3ChannelId, Adc4ChannelRef, Adc4ChannelId};
+pub use self::channels::{
+    Adc34Channels, Adc3Channel, Adc3ChannelId, Adc3ChannelRef, Adc4Channel, Adc4ChannelId,
+    Adc4ChannelRef,
+};
 
 use super::*;
 use prelude::*;
@@ -130,8 +133,8 @@ impl_pair_withsequence_withsequence!(
 
 impl_pair_dual_runningdma_runningdma!(Adc34, Adc3, Adc4, adc3, adc4);
 
-impl_single_any!(Adc3, Adc3ChannelId);
-impl_single_any!(Adc4, Adc4ChannelId);
+impl_single_any!(Adc3, Adc3Channel);
+impl_single_any!(Adc4, Adc4Channel);
 
 impl_single_unpowered!(Adc3);
 impl_single_unpowered!(Adc4);
@@ -188,6 +191,30 @@ pub mod channels {
     use gpio::gpiob::{PB0, PB1, PB12, PB13, PB14, PB15};
     use gpio::gpiod::{PD10, PD11, PD12, PD13, PD14, PD8, PD9};
     use gpio::gpioe::{PE10, PE11, PE12, PE13, PE14, PE15, PE7, PE8, PE9};
+
+    /// A trait implemented by all ADC3 channel singletons.
+    pub trait Adc3Channel {
+        /// The numeric ID of the channel.
+        const ID: Adc3ChannelId;
+    }
+
+    /// A trait implemented by all ADC4 channel singletons.
+    pub trait Adc4Channel {
+        /// The numeric ID of the channel.
+        const ID: Adc4ChannelId;
+    }
+
+    // TODO
+    /// Op-amp 3
+    pub struct OpAmp3 {
+        _0: (),
+    }
+
+    // TODO
+    /// Op-amp 4
+    pub struct OpAmp4 {
+        _0: (),
+    }
 
     define_impl_internalref!(Adc34);
 
@@ -723,19 +750,73 @@ pub mod channels {
         _state: PhantomData<S>,
     }
 
-    impl_channel_conversions!(Adc34, Adc3In1, Adc3In2, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc3In2, Adc3In3, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc3In3, Adc3In4, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc3In4, Adc3In5, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions_shared_neg!(
-        Adc34,
-        (adc3, Adc3ChannelId, Adc3In5),
-        (adc4, Adc4ChannelId, Adc4In5),
-        Adc34In6
-    );
-    impl_channel_conversions!(Adc34, Adc3In12, Adc3In13, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc3In13, Adc3In14, [(adc3, Adc3ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc3In14, Adc3In15, [(adc3, Adc3ChannelId)]);
+    macro_rules! impl_adc3channel {
+        ($name:ident) => {
+            impl Adc3Channel for $name {
+                const ID: Adc3ChannelId = Adc3ChannelId::$name;
+            }
+        };
+        ($name:ident, $($generics:ident),*) => {
+            impl<$($generics),*> Adc3Channel for $name<$($generics),*> {
+                const ID: Adc3ChannelId = Adc3ChannelId::$name;
+            }
+        };
+    }
+    impl_adc3channel!(Adc3In1, S);
+    impl_adc3channel!(Adc3In2, S);
+    impl_adc3channel!(Adc3In3, S);
+    impl_adc3channel!(Adc3In4, S);
+    impl_adc3channel!(Adc3In5, S);
+    impl_adc3channel!(Adc34In6, S);
+    impl_adc3channel!(Adc34In7, S);
+    impl_adc3channel!(Adc34In8, S);
+    impl_adc3channel!(Adc34In9, S);
+    impl_adc3channel!(Adc34In10, S);
+    impl_adc3channel!(Adc34In11, S);
+    impl_adc3channel!(Adc3In12, S);
+    impl_adc3channel!(Adc3In13, S);
+    impl_adc3channel!(Adc3In14, S);
+    impl_adc3channel!(Adc3In15, S);
+    impl_adc3channel!(Adc3In16);
+    impl_adc3channel!(OpAmp3);
+    impl_adc3channel!(InternalRef);
+
+    macro_rules! impl_adc4channel {
+        ($name:ident) => {
+            impl Adc4Channel for $name {
+                const ID: Adc4ChannelId = Adc4ChannelId::$name;
+            }
+        };
+        ($name:ident, $($generics:ident),*) => {
+            impl<$($generics),*> Adc4Channel for $name<$($generics),*> {
+                const ID: Adc4ChannelId = Adc4ChannelId::$name;
+            }
+        };
+    }
+    impl_adc4channel!(Adc4In1, S);
+    impl_adc4channel!(Adc4In2, S);
+    impl_adc4channel!(Adc4In3, S);
+    impl_adc4channel!(Adc4In4, S);
+    impl_adc4channel!(Adc4In5, S);
+    impl_adc4channel!(Adc34In6, S);
+    impl_adc4channel!(Adc34In7, S);
+    impl_adc4channel!(Adc34In8, S);
+    impl_adc4channel!(Adc34In9, S);
+    impl_adc4channel!(Adc34In10, S);
+    impl_adc4channel!(Adc34In11, S);
+    impl_adc4channel!(Adc4In12, S);
+    impl_adc4channel!(Adc4In13, S);
+    impl_adc4channel!(OpAmp4);
+    impl_adc4channel!(InternalRef);
+
+    impl_channel_conversions!(Adc34, Adc3In1, Adc3In2, [adc3]);
+    impl_channel_conversions!(Adc34, Adc3In2, Adc3In3, [adc3]);
+    impl_channel_conversions!(Adc34, Adc3In3, Adc3In4, [adc3]);
+    impl_channel_conversions!(Adc34, Adc3In4, Adc3In5, [adc3]);
+    impl_channel_conversions_shared_neg!(Adc34, (adc3, Adc3In5), (adc4, Adc4In5), Adc34In6);
+    impl_channel_conversions!(Adc34, Adc3In12, Adc3In13, [adc3]);
+    impl_channel_conversions!(Adc34, Adc3In13, Adc3In14, [adc3]);
+    impl_channel_conversions!(Adc34, Adc3In14, Adc3In15, [adc3]);
 
     impl Adc3In15<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -746,8 +827,7 @@ pub mod channels {
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc3In15<Differential> {
             unsafe {
-                pair.adc3
-                    .set_differential_unchecked(Adc3ChannelId::Adc3In15);
+                pair.adc3.set_differential_unchecked(&self);
             }
             Adc3In15 {
                 _state: PhantomData,
@@ -762,8 +842,7 @@ pub mod channels {
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> (Adc3In15<SingleEnded>, Adc3In16) {
             unsafe {
-                pair.adc3
-                    .set_single_ended_unchecked(Adc3ChannelId::Adc3In15);
+                pair.adc3.set_single_ended_unchecked(&self);
             }
             (
                 Adc3In15 {
@@ -776,17 +855,12 @@ pub mod channels {
         }
     }
 
-    impl_channel_conversions!(Adc34, Adc4In1, Adc4In2, [(adc4, Adc4ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc4In2, Adc4In3, [(adc4, Adc4ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc4In3, Adc4In4, [(adc4, Adc4ChannelId)]);
-    impl_channel_conversions!(Adc34, Adc4In4, Adc4In5, [(adc4, Adc4ChannelId)]);
-    impl_channel_conversions_shared_neg!(
-        Adc34,
-        (adc4, Adc4ChannelId, Adc4In5),
-        (adc3, Adc3ChannelId, Adc3In5),
-        Adc34In6
-    );
-    impl_channel_conversions!(Adc34, Adc4In12, Adc4In13, [(adc4, Adc4ChannelId)]);
+    impl_channel_conversions!(Adc34, Adc4In1, Adc4In2, [adc4]);
+    impl_channel_conversions!(Adc34, Adc4In2, Adc4In3, [adc4]);
+    impl_channel_conversions!(Adc34, Adc4In3, Adc4In4, [adc4]);
+    impl_channel_conversions!(Adc34, Adc4In4, Adc4In5, [adc4]);
+    impl_channel_conversions_shared_neg!(Adc34, (adc4, Adc4In5), (adc3, Adc3In5), Adc34In6);
+    impl_channel_conversions!(Adc34, Adc4In12, Adc4In13, [adc4]);
 
     impl Adc4In13<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the positive input.
@@ -798,8 +872,7 @@ pub mod channels {
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc4In13<Differential> {
             unsafe {
-                pair.adc4
-                    .set_differential_unchecked(Adc4ChannelId::Adc4In13);
+                pair.adc4.set_differential_unchecked(&self);
             }
             Adc4In13 {
                 _state: PhantomData,
@@ -814,8 +887,7 @@ pub mod channels {
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc4In13<SingleEnded> {
             unsafe {
-                pair.adc4
-                    .set_single_ended_unchecked(Adc4ChannelId::Adc4In13);
+                pair.adc4.set_single_ended_unchecked(&self);
             }
             Adc4In13 {
                 _state: PhantomData,
@@ -823,36 +895,11 @@ pub mod channels {
         }
     }
 
-    impl_channel_conversions!(
-        Adc34,
-        Adc34In6,
-        Adc34In7,
-        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc34,
-        Adc34In7,
-        Adc34In8,
-        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc34,
-        Adc34In8,
-        Adc34In9,
-        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc34,
-        Adc34In9,
-        Adc34In10,
-        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc34,
-        Adc34In10,
-        Adc34In11,
-        [(adc3, Adc3ChannelId), (adc4, Adc4ChannelId)]
-    );
+    impl_channel_conversions!(Adc34, Adc34In6, Adc34In7, [adc3, adc4]);
+    impl_channel_conversions!(Adc34, Adc34In7, Adc34In8, [adc3, adc4]);
+    impl_channel_conversions!(Adc34, Adc34In8, Adc34In9, [adc3, adc4]);
+    impl_channel_conversions!(Adc34, Adc34In9, Adc34In10, [adc3, adc4]);
+    impl_channel_conversions!(Adc34, Adc34In10, Adc34In11, [adc3, adc4]);
 
     impl Adc34In11<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -863,10 +910,8 @@ pub mod channels {
             pair: &mut Adc34<P, Disabled, Disabled>,
         ) -> Adc34In11<Differential> {
             unsafe {
-                pair.adc3
-                    .set_differential_unchecked(Adc3ChannelId::Adc34In11);
-                pair.adc4
-                    .set_differential_unchecked(Adc4ChannelId::Adc34In11);
+                pair.adc3.set_differential_unchecked(&self);
+                pair.adc4.set_differential_unchecked(&self);
             }
             Adc34In11 {
                 _state: PhantomData,
@@ -884,10 +929,8 @@ pub mod channels {
             (Adc3In12<SingleEnded>, Adc4In12<SingleEnded>),
         ) {
             unsafe {
-                pair.adc3
-                    .set_single_ended_unchecked(Adc3ChannelId::Adc34In11);
-                pair.adc4
-                    .set_single_ended_unchecked(Adc4ChannelId::Adc34In11);
+                pair.adc3.set_single_ended_unchecked(&self);
+                pair.adc4.set_single_ended_unchecked(&self);
             }
             (
                 Adc34In11 {

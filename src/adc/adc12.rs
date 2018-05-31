@@ -1,6 +1,9 @@
 //! Wrappers for ADC1 and ADC2.
 
-pub use self::channels::{Adc12Channels, Adc1ChannelRef, Adc1ChannelId, Adc2ChannelRef, Adc2ChannelId};
+pub use self::channels::{
+    Adc12Channels, Adc1Channel, Adc1ChannelId, Adc1ChannelRef, Adc2Channel, Adc2ChannelId,
+    Adc2ChannelRef,
+};
 
 use super::*;
 use prelude::*;
@@ -130,8 +133,8 @@ impl_pair_withsequence_withsequence!(
 
 impl_pair_dual_runningdma_runningdma!(Adc12, Adc1, Adc2, adc1, adc2);
 
-impl_single_any!(Adc1, Adc1ChannelId);
-impl_single_any!(Adc2, Adc2ChannelId);
+impl_single_any!(Adc1, Adc1Channel);
+impl_single_any!(Adc2, Adc2Channel);
 
 impl_single_unpowered!(Adc1);
 impl_single_unpowered!(Adc2);
@@ -190,9 +193,27 @@ pub mod channels {
     use gpio::gpioc::{PC0, PC1, PC2, PC3, PC4, PC5};
     use gpio::gpiof::{PF2, PF4};
 
+    /// A trait implemented by all ADC1 channel singletons.
+    pub trait Adc1Channel {
+        /// The numeric ID of the channel.
+        const ID: Adc1ChannelId;
+    }
+
+    /// A trait implemented by all ADC2 channel singletons.
+    pub trait Adc2Channel {
+        /// The numeric ID of the channel.
+        const ID: Adc2ChannelId;
+    }
+
     // TODO
     /// Op-amp 1
     pub struct OpAmp1 {
+        _0: (),
+    }
+
+    // TODO
+    /// Op-amp 2
+    pub struct OpAmp2 {
         _0: (),
     }
 
@@ -758,58 +779,88 @@ pub mod channels {
         _state: PhantomData<S>,
     }
 
-    impl_channel_conversions!(Adc12, Adc1In1, Adc1In2, [(adc1, Adc1ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc1In2, Adc1In3, [(adc1, Adc1ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc1In3, Adc1In4, [(adc1, Adc1ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc1In4, Adc1In5, [(adc1, Adc1ChannelId)]);
-    impl_channel_conversions_shared_neg!(
-        Adc12,
-        (adc1, Adc1ChannelId, Adc1In5),
-        (adc2, Adc2ChannelId, Adc2In5),
-        Adc12In6
-    );
-    impl_channel_conversions!(Adc12, Adc1In11, Adc1In12, [(adc1, Adc1ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc1In12, Adc1In13, [(adc1, Adc1ChannelId)]);
+    macro_rules! impl_adc1channel {
+        ($name:ident) => {
+            impl Adc1Channel for $name {
+                const ID: Adc1ChannelId = Adc1ChannelId::$name;
+            }
+        };
+        ($name:ident, $($generics:ident),*) => {
+            impl<$($generics),*> Adc1Channel for $name<$($generics),*> {
+                const ID: Adc1ChannelId = Adc1ChannelId::$name;
+            }
+        };
+    }
+    impl_adc1channel!(Adc1In1, S);
+    impl_adc1channel!(Adc1In2, S);
+    impl_adc1channel!(Adc1In3, S);
+    impl_adc1channel!(Adc1In4, S);
+    impl_adc1channel!(Adc1In5, S);
+    impl_adc1channel!(Adc12In6, S);
+    impl_adc1channel!(Adc12In7, S);
+    impl_adc1channel!(Adc12In8, S);
+    impl_adc1channel!(Adc12In9, S);
+    impl_adc1channel!(Adc12In10, S);
+    impl_adc1channel!(Adc1In11, S);
+    impl_adc1channel!(Adc1In12, S);
+    impl_adc1channel!(Adc1In13, S);
+    impl_adc1channel!(OpAmp1);
+    impl_adc1channel!(TemperatureSensor);
+    impl_adc1channel!(HalfBattery);
+    impl_adc1channel!(InternalRef);
 
-    impl_channel_conversions!(Adc12, Adc2In1, Adc2In2, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In2, Adc2In3, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In3, Adc2In4, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In4, Adc2In5, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions_shared_neg!(
-        Adc12,
-        (adc2, Adc2ChannelId, Adc2In5),
-        (adc1, Adc1ChannelId, Adc1In5),
-        Adc12In6
-    );
-    impl_channel_conversions!(Adc12, Adc2In11, Adc2In12, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In12, Adc2In13, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In13, Adc2In14, [(adc2, Adc2ChannelId)]);
-    impl_channel_conversions!(Adc12, Adc2In14, Adc2In15, [(adc2, Adc2ChannelId)]);
+    macro_rules! impl_adc2channel {
+        ($name:ident) => {
+            impl Adc2Channel for $name {
+                const ID: Adc2ChannelId = Adc2ChannelId::$name;
+            }
+        };
+        ($name:ident, $($generics:ident),*) => {
+            impl<$($generics),*> Adc2Channel for $name<$($generics),*> {
+                const ID: Adc2ChannelId = Adc2ChannelId::$name;
+            }
+        };
+    }
+    impl_adc2channel!(Adc2In1, S);
+    impl_adc2channel!(Adc2In2, S);
+    impl_adc2channel!(Adc2In3, S);
+    impl_adc2channel!(Adc2In4, S);
+    impl_adc2channel!(Adc2In5, S);
+    impl_adc2channel!(Adc12In6, S);
+    impl_adc2channel!(Adc12In7, S);
+    impl_adc2channel!(Adc12In8, S);
+    impl_adc2channel!(Adc12In9, S);
+    impl_adc2channel!(Adc12In10, S);
+    impl_adc2channel!(Adc2In11, S);
+    impl_adc2channel!(Adc2In12, S);
+    impl_adc2channel!(Adc2In13, S);
+    impl_adc2channel!(Adc2In14, S);
+    impl_adc2channel!(Adc2In15, S);
+    impl_adc2channel!(OpAmp2);
+    impl_adc2channel!(InternalRef);
 
-    impl_channel_conversions!(
-        Adc12,
-        Adc12In6,
-        Adc12In7,
-        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc12,
-        Adc12In7,
-        Adc12In8,
-        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc12,
-        Adc12In8,
-        Adc12In9,
-        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
-    );
-    impl_channel_conversions!(
-        Adc12,
-        Adc12In9,
-        Adc12In10,
-        [(adc1, Adc1ChannelId), (adc2, Adc2ChannelId)]
-    );
+    impl_channel_conversions!(Adc12, Adc1In1, Adc1In2, [adc1]);
+    impl_channel_conversions!(Adc12, Adc1In2, Adc1In3, [adc1]);
+    impl_channel_conversions!(Adc12, Adc1In3, Adc1In4, [adc1]);
+    impl_channel_conversions!(Adc12, Adc1In4, Adc1In5, [adc1]);
+    impl_channel_conversions_shared_neg!(Adc12, (adc1, Adc1In5), (adc2, Adc2In5), Adc12In6);
+    impl_channel_conversions!(Adc12, Adc1In11, Adc1In12, [adc1]);
+    impl_channel_conversions!(Adc12, Adc1In12, Adc1In13, [adc1]);
+
+    impl_channel_conversions!(Adc12, Adc2In1, Adc2In2, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In2, Adc2In3, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In3, Adc2In4, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In4, Adc2In5, [adc2]);
+    impl_channel_conversions_shared_neg!(Adc12, (adc2, Adc2In5), (adc1, Adc1In5), Adc12In6);
+    impl_channel_conversions!(Adc12, Adc2In11, Adc2In12, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In12, Adc2In13, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In13, Adc2In14, [adc2]);
+    impl_channel_conversions!(Adc12, Adc2In14, Adc2In15, [adc2]);
+
+    impl_channel_conversions!(Adc12, Adc12In6, Adc12In7, [adc1, adc2]);
+    impl_channel_conversions!(Adc12, Adc12In7, Adc12In8, [adc1, adc2]);
+    impl_channel_conversions!(Adc12, Adc12In8, Adc12In9, [adc1, adc2]);
+    impl_channel_conversions!(Adc12, Adc12In9, Adc12In10, [adc1, adc2]);
 
     impl Adc12In10<SingleEnded> {
         /// Changes the channel to differential mode, where `self` is the
@@ -820,12 +871,8 @@ pub mod channels {
             pair: &mut Adc12<P, Disabled, Disabled>,
         ) -> Adc12In10<Differential> {
             unsafe {
-                pair
-                    .adc1
-                    .set_differential_unchecked(Adc1ChannelId::Adc12In10);
-                pair
-                    .adc2
-                    .set_differential_unchecked(Adc2ChannelId::Adc12In10);
+                pair.adc1.set_differential_unchecked(&self);
+                pair.adc2.set_differential_unchecked(&self);
             }
             Adc12In10 {
                 _state: PhantomData,
@@ -843,12 +890,8 @@ pub mod channels {
             (Adc1In11<SingleEnded>, Adc2In11<SingleEnded>),
         ) {
             unsafe {
-                pair
-                    .adc1
-                    .set_single_ended_unchecked(Adc1ChannelId::Adc12In10);
-                pair
-                    .adc2
-                    .set_single_ended_unchecked(Adc2ChannelId::Adc12In10);
+                pair.adc1.set_single_ended_unchecked(&self);
+                pair.adc2.set_single_ended_unchecked(&self);
             }
             (
                 Adc12In10 {

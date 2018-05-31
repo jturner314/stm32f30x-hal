@@ -677,7 +677,7 @@ macro_rules! impl_pair_dual_runningdma_runningdma {
 }
 
 macro_rules! impl_single_any {
-    ($Adci:ident, $AdciChannelId:ident) => {
+    ($Adci:ident, $AdciChannel:ident) => {
         impl<P, S> $Adci<P, S> {
             /// Returns the ADC clock frequency.
             ///
@@ -686,9 +686,9 @@ macro_rules! impl_single_any {
                 self.clock_freq
             }
 
-            /// Sets the channel with the given index into single-ended mode.
-            unsafe fn set_single_ended_unchecked(&mut self, id: $AdciChannelId) {
-                let channel_num = id as u8;
+            /// Sets the channel with the given type into single-ended mode.
+            unsafe fn set_single_ended_unchecked<T: $AdciChannel>(&mut self, _: &T) {
+                let channel_num = T::ID as u8;
                 debug_assert!(1 <= channel_num && channel_num <= 15);
                 self.reg.difsel.modify(|r, w| {
                     w.difsel_1_15()
@@ -696,9 +696,9 @@ macro_rules! impl_single_any {
                 });
             }
 
-            /// Sets the channel with the given index into differential mode.
-            unsafe fn set_differential_unchecked(&mut self, id: $AdciChannelId) {
-                let channel_num = id as u8;
+            /// Sets the channel with the given type into differential mode.
+            unsafe fn set_differential_unchecked<T: $AdciChannel>(&mut self, _: &T) {
+                let channel_num = T::ID as u8;
                 debug_assert!(1 <= channel_num && channel_num <= 15);
                 self.reg.difsel.modify(|r, w| {
                     w.difsel_1_15()
@@ -1318,7 +1318,7 @@ macro_rules! impl_channel_from_pins {
 }
 
 macro_rules! impl_channel_conversions {
-    ($Pair:ident, $pos:ident, $neg:ident, [$(($adc:ident, $AdcChannelId:ident)),*]) => {
+    ($Pair:ident, $pos:ident, $neg:ident, [$($adc:ident),*]) => {
         impl $pos<SingleEnded> {
             /// Changes the channel to differential mode, where `self` is the
             /// positive input and `_neg` is the negative input.
@@ -1329,7 +1329,7 @@ macro_rules! impl_channel_conversions {
             ) -> $pos<Differential> {
                 unsafe {
                     $(
-                        pair.$adc.set_differential_unchecked($AdcChannelId::$pos);
+                        pair.$adc.set_differential_unchecked(&self);
                     )*
                 }
                 $pos {
@@ -1346,7 +1346,7 @@ macro_rules! impl_channel_conversions {
             ) -> ($pos<SingleEnded>, $neg<SingleEnded>) {
                 unsafe {
                     $(
-                        pair.$adc.set_single_ended_unchecked($AdcChannelId::$pos);
+                        pair.$adc.set_single_ended_unchecked(&self);
                     )*
                 }
                 (
@@ -1365,8 +1365,8 @@ macro_rules! impl_channel_conversions {
 macro_rules! impl_channel_conversions_shared_neg {
     (
         $Pair:ident,
-        ($this_adc:ident, $ThisAdcChannelId:ident, $this_pos:ident),
-        ($other_adc:ident, $OtherAdcChannelId:ident, $other_pos:ident),
+        ($this_adc:ident, $this_pos:ident),
+        ($other_adc:ident, $other_pos:ident),
         $neg:ident
     ) => {
         impl $this_pos<SingleEnded> {
@@ -1377,10 +1377,7 @@ macro_rules! impl_channel_conversions_shared_neg {
                 _neg: $neg<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> $this_pos<Differential> {
-                unsafe {
-                    pair.$this_adc
-                        .set_differential_unchecked($ThisAdcChannelId::$this_pos)
-                }
+                unsafe { pair.$this_adc.set_differential_unchecked(&self) }
                 $this_pos {
                     _state: PhantomData,
                 }
@@ -1400,10 +1397,7 @@ macro_rules! impl_channel_conversions_shared_neg {
                 _other_pos: &$other_pos<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> ($this_pos<SingleEnded>, $neg<SingleEnded>) {
-                unsafe {
-                    pair.$this_adc
-                        .set_single_ended_unchecked($ThisAdcChannelId::$this_pos)
-                }
+                unsafe { pair.$this_adc.set_single_ended_unchecked(&self) }
                 (
                     $this_pos {
                         _state: PhantomData,
@@ -1421,15 +1415,13 @@ macro_rules! impl_channel_conversions_shared_neg {
             /// input.
             pub fn both_into_differential<P>(
                 self,
-                _other_pos: $other_pos<SingleEnded>,
+                other_pos: $other_pos<SingleEnded>,
                 _neg: $neg<SingleEnded>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> ($this_pos<Differential>, $other_pos<Differential>) {
                 unsafe {
-                    pair.$this_adc
-                        .set_differential_unchecked($ThisAdcChannelId::$this_pos);
-                    pair.$other_adc
-                        .set_differential_unchecked($OtherAdcChannelId::$other_pos);
+                    pair.$this_adc.set_differential_unchecked(&self);
+                    pair.$other_adc.set_differential_unchecked(&other_pos);
                 }
                 (
                     $this_pos {
@@ -1446,17 +1438,15 @@ macro_rules! impl_channel_conversions_shared_neg {
             /// Changes the channels to single-ended mode.
             pub fn both_into_single_ended<P>(
                 self,
-                _other: $other_pos<Differential>,
+                other: $other_pos<Differential>,
                 pair: &mut $Pair<P, Disabled, Disabled>,
             ) -> (
                 ($this_pos<SingleEnded>, $other_pos<SingleEnded>),
                 $neg<SingleEnded>,
             ) {
                 unsafe {
-                    pair.$this_adc
-                        .set_single_ended_unchecked($ThisAdcChannelId::$this_pos);
-                    pair.$other_adc
-                        .set_single_ended_unchecked($OtherAdcChannelId::$other_pos);
+                    pair.$this_adc.set_single_ended_unchecked(&self);
+                    pair.$other_adc.set_single_ended_unchecked(&other);
                 }
                 (
                     (
