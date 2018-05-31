@@ -443,34 +443,34 @@ pub mod channels {
         }
     }
 
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In1, PA0, PA1);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In2, PA1, PA2);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In3, PA2, PA3);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In4, PA3, PF4);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc1In5, PF4, PC0);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In6, PC0, PC1);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In7, PC1, PC2);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In8, PC2, PC3);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In9, PC3, PF2);
-    impl_channel_from_pins!(Adc1ChannelRef, Adc1ChannelId, Adc12In10, PF2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc1In1, PA0, PA1);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc1In2, PA1, PA2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc1In3, PA2, PA3);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc1In4, PA3, PF4);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc1In5, PF4, PC0);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc1ChannelRef, Adc1Channel, Adc12In10, PF2);
 
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In1, PA4, PA5);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In2, PA5, PA6);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In3, PA6, PA7);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In4, PA7, PC4);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In5, PC4, PC0);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In6, PC0, PC1);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In7, PC1, PC2);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In8, PC2, PC3);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In9, PC3, PF2);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc12In10, PF2, PC5);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In11, PC5, PB2);
-    impl_channel_from_pins!(Adc2ChannelRef, Adc2ChannelId, Adc2In12, PB2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In1, PA4, PA5);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In2, PA5, PA6);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In3, PA6, PA7);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In4, PA7, PC4);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In5, PC4, PC0);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc12In6, PC0, PC1);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc12In7, PC1, PC2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc12In8, PC2, PC3);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc12In9, PC3, PF2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc12In10, PF2, PC5);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In11, PC5, PB2);
+    impl_channel_from_pins!(Adc2ChannelRef, Adc2Channel, Adc2In12, PB2);
 
     impl<'a> From<&'a TemperatureSensor> for Adc1ChannelRef<'a> {
         fn from(_: &'a TemperatureSensor) -> Adc1ChannelRef<'a> {
             Adc1ChannelRef {
-                id: Adc1ChannelId::TemperatureSensor,
+                id: <TemperatureSensor as Adc1Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -479,7 +479,7 @@ pub mod channels {
     impl<'a> From<&'a HalfBattery> for Adc1ChannelRef<'a> {
         fn from(_: &'a HalfBattery) -> Adc1ChannelRef<'a> {
             Adc1ChannelRef {
-                id: Adc1ChannelId::HalfBattery,
+                id: <HalfBattery as Adc1Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -488,7 +488,7 @@ pub mod channels {
     impl<'a> From<&'a mut InternalRef> for Adc1ChannelRef<'a> {
         fn from(_: &'a mut InternalRef) -> Adc1ChannelRef<'a> {
             Adc1ChannelRef {
-                id: Adc1ChannelId::InternalRef,
+                id: <InternalRef as Adc1Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -497,7 +497,7 @@ pub mod channels {
     impl<'a> From<&'a mut InternalRef> for Adc2ChannelRef<'a> {
         fn from(_: &'a mut InternalRef) -> Adc2ChannelRef<'a> {
             Adc2ChannelRef {
-                id: Adc2ChannelId::InternalRef,
+                id: <InternalRef as Adc2Channel>::ID,
                 life: PhantomData,
             }
         }

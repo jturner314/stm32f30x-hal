@@ -370,16 +370,16 @@ pub mod channels {
         }
     }
 
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In1, PB1, PE9);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In2, PE9, PE13);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In3, PE13);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In1, PB1, PE9);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In2, PE9, PE13);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In3, PE13);
 
     // The negative side of ADC3_IN3 is connected to ADC3_IN4, which is
     // connected to ground. (There is no negative pin to borrow.)
     impl<'a> From<(&'a Adc3In3<Differential>, &'a PE13<Analog>)> for Adc3ChannelRef<'a> {
         fn from(_: (&'a Adc3In3<Differential>, &'a PE13<Analog>)) -> Adc3ChannelRef<'a> {
             Adc3ChannelRef {
-                id: Adc3ChannelId::Adc3In3,
+                id: <Adc3In3<Differential> as Adc3Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -390,7 +390,7 @@ pub mod channels {
     impl<'a> From<&'a Adc3In4<SingleEnded>> for Adc3ChannelRef<'a> {
         fn from(_: &'a Adc3In4<SingleEnded>) -> Adc3ChannelRef<'a> {
             Adc3ChannelRef {
-                id: Adc3ChannelId::Adc3In4,
+                id: <Adc3In4<SingleEnded> as Adc3Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -401,53 +401,53 @@ pub mod channels {
     impl<'a> From<(&'a Adc3In4<Differential>, &'a PB13<Analog>)> for Adc3ChannelRef<'a> {
         fn from(_: (&'a Adc3In4<Differential>, &'a PB13<Analog>)) -> Adc3ChannelRef<'a> {
             Adc3ChannelRef {
-                id: Adc3ChannelId::Adc3In4,
+                id: <Adc3In4<Differential> as Adc3Channel>::ID,
                 life: PhantomData,
             }
         }
     }
 
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In5, PB13, PE8);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In6, PE8, PD10);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In7, PD10, PD11);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In8, PD11, PD12);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In9, PD12, PD13);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In10, PD13, PD14);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc34In11, PD14, PB0);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In12, PB0, PE7);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In13, PE7, PE10);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In14, PE10, PE11);
-    impl_channel_from_pins!(Adc3ChannelRef, Adc3ChannelId, Adc3In15, PE11, PE12);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In5, PB13, PE8);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In6, PE8, PD10);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In7, PD10, PD11);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In8, PD11, PD12);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In9, PD12, PD13);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In10, PD13, PD14);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc34In11, PD14, PB0);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In12, PB0, PE7);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In13, PE7, PE10);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In14, PE10, PE11);
+    impl_channel_from_pins!(Adc3ChannelRef, Adc3Channel, Adc3In15, PE11, PE12);
 
     impl<'a> From<(&'a Adc3In16, &'a PE12<Analog>)> for Adc3ChannelRef<'a> {
         fn from(_: (&'a Adc3In16, &'a PE12<Analog>)) -> Adc3ChannelRef<'a> {
             Adc3ChannelRef {
-                id: Adc3ChannelId::Adc3In16,
+                id: <Adc3In16 as Adc3Channel>::ID,
                 life: PhantomData,
             }
         }
     }
 
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In1, PE14, PE15);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In2, PE15, PB12);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In3, PB12, PB14);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In4, PB14, PB15);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In5, PB15, PE8);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In6, PE8, PD10);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In7, PD10, PD11);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In8, PD11, PD12);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In9, PD12, PD13);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In10, PD13, PD14);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc34In11, PD14, PD8);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In12, PD8, PD9);
-    impl_channel_from_pins!(Adc4ChannelRef, Adc4ChannelId, Adc4In13, PD9);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In1, PE14, PE15);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In2, PE15, PB12);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In3, PB12, PB14);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In4, PB14, PB15);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In5, PB15, PE8);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In6, PE8, PD10);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In7, PD10, PD11);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In8, PD11, PD12);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In9, PD12, PD13);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In10, PD13, PD14);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc34In11, PD14, PD8);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In12, PD8, PD9);
+    impl_channel_from_pins!(Adc4ChannelRef, Adc4Channel, Adc4In13, PD9);
 
     // The negative side of ADC4_IN13 is connected to V_REF-. (There is no
     // negative pin to borrow.)
     impl<'a> From<(&'a Adc4In13<Differential>, &'a PD9<Analog>)> for Adc4ChannelRef<'a> {
         fn from(_: (&'a Adc4In13<Differential>, &'a PD9<Analog>)) -> Adc4ChannelRef<'a> {
             Adc4ChannelRef {
-                id: Adc4ChannelId::Adc4In13,
+                id: <Adc4In13<Differential> as Adc4Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -456,7 +456,7 @@ pub mod channels {
     impl<'a> From<&'a mut InternalRef> for Adc3ChannelRef<'a> {
         fn from(_: &'a mut InternalRef) -> Adc3ChannelRef<'a> {
             Adc3ChannelRef {
-                id: Adc3ChannelId::InternalRef,
+                id: <InternalRef as Adc3Channel>::ID,
                 life: PhantomData,
             }
         }
@@ -465,7 +465,7 @@ pub mod channels {
     impl<'a> From<&'a mut InternalRef> for Adc4ChannelRef<'a> {
         fn from(_: &'a mut InternalRef) -> Adc4ChannelRef<'a> {
             Adc4ChannelRef {
-                id: Adc4ChannelId::InternalRef,
+                id: <InternalRef as Adc4Channel>::ID,
                 life: PhantomData,
             }
         }

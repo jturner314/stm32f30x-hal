@@ -1282,18 +1282,18 @@ macro_rules! define_impl_internalref {
 }
 
 macro_rules! impl_channel_from_pins {
-    ($borrowed:ident, $id:ident, $channel:ident, $pos:ident) => {
+    ($borrowed:ident, $chan_trait:ident, $channel:ident, $pos:ident) => {
         impl<'a> From<(&'a $channel<SingleEnded>, &'a $pos<Analog>)> for $borrowed<'a> {
             fn from(_: (&'a $channel<SingleEnded>, &'a $pos<Analog>)) -> $borrowed<'a> {
                 $borrowed {
-                    id: $id::$channel,
+                    id: <$channel<SingleEnded> as $chan_trait>::ID,
                     life: PhantomData,
                 }
             }
         }
     };
-    ($borrowed:ident, $id:ident, $channel:ident, $pos:ident, $neg:ident) => {
-        impl_channel_from_pins!($borrowed, $id, $channel, $pos);
+    ($borrowed:ident, $chan_trait:ident, $channel:ident, $pos:ident, $neg:ident) => {
+        impl_channel_from_pins!($borrowed, $chan_trait, $channel, $pos);
         impl<'a>
             From<(
                 &'a $channel<Differential>,
@@ -1309,7 +1309,7 @@ macro_rules! impl_channel_from_pins {
                 ),
             ) -> $borrowed<'a> {
                 $borrowed {
-                    id: $id::$channel,
+                    id: <$channel<SingleEnded> as $chan_trait>::ID,
                     life: PhantomData,
                 }
             }
