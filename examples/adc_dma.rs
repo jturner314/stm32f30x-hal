@@ -15,7 +15,6 @@ extern crate strong_scope_guard;
 use cortex_m::asm;
 use hal::adc;
 use hal::adc::adc12::Adc12;
-use hal::adc::adc12::channels::{Adc1Channel, Adc2Channel};
 use hal::delay::Delay;
 use hal::dma::{dma1, DmaExt, Priority};
 use hal::prelude::*;
@@ -54,9 +53,7 @@ fn main() -> ! {
         let mut enabled = disabled.enable();
         enabled.set_alignment(adc::Alignment::Right);
         enabled.set_resolution(adc::Resolution::Bit12);
-        unsafe {
-            enabled.with_sequence_unchecked(&[Adc1Channel::from((&adc12_channels.adc1_in1, &pa0))])
-        }
+        unsafe { enabled.with_sequence_unchecked(&[(&adc12_channels.adc1_in1, &pa0).into()]) }
     };
 
     // DMA with a single ADC.
@@ -80,8 +77,8 @@ fn main() -> ! {
     adc12.adc2.set_resolution(adc::Resolution::Bit12);
     let adc12 = adc12
         .with_sequences(
-            &[Adc1Channel::from((&adc12_channels.adc1_in1, &pa0))],
-            &[Adc2Channel::from((&adc12_channels.adc2_in3, &pa6))],
+            &[(&adc12_channels.adc1_in1, &pa0).into()],
+            &[(&adc12_channels.adc2_in3, &pa6).into()],
         )
         .unwrap_or_else(|_| panic!());
 
