@@ -617,20 +617,17 @@ macro_rules! impl_pair_withsequence_withsequence {
 
 macro_rules! impl_pair_dual_runningdma_runningdma {
     ($Pair:ident, $Master:ident, $Slave:ident, $master:ident, $slave:ident) => {
-        impl<'m, 's, 'body, 'scope, Channel>
-            $Pair<
-                Dual,
-                RunningDmaMaster<'m, 'body, 'scope, Channel>,
-                RunningDmaSlave<'s, 'body, 'scope>,
-            > where
-            Channel: dma::DmaChannel,
+        impl<'m, 's, 'body, 'scope, C>
+            $Pair<Dual, RunningDmaMaster<'m, 'body, 'scope, C>, RunningDmaSlave<'s, 'body, 'scope>>
+        where
+            C: dma::DmaChannel,
         {
             /// Waits for the DMA transfer to finish.
             pub fn wait(
                 self,
             ) -> (
                 $Pair<Dual, WithSequence<'m>, WithSequence<'s>>,
-                Channel,
+                C,
                 ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
                 &'scope mut [[u16; 2]],
             ) {
@@ -1198,14 +1195,17 @@ macro_rules! impl_single_independent_with_sequence {
 }
 
 macro_rules! impl_single_independent_running_dma {
-    ($Adci:ident, $dma_chan:ty) => {
-        impl<'seq, 'body, 'scope> $Adci<Independent, RunningDma<'seq, 'body, 'scope, $dma_chan>> {
+    ($Adci:ident) => {
+        impl<'seq, 'body, 'scope, C> $Adci<Independent, RunningDma<'seq, 'body, 'scope, C>>
+        where
+            C: dma::DmaChannel,
+        {
             /// Waits for the DMA transfer to finish.
             pub fn wait(
                 self,
             ) -> (
                 $Adci<Independent, WithSequence<'seq>>,
-                $dma_chan,
+                C,
                 ScopeGuard<'body, 'scope, dma::WaitHandler<Option<fn()>>>,
                 &'scope mut [u16],
             ) {

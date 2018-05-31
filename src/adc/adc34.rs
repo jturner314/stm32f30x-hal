@@ -151,8 +151,8 @@ impl_single_with_sequence!(Adc4, Adc4ChannelId);
 impl_single_independent_with_sequence!(Adc3, ADC3);
 impl_single_independent_with_sequence!(Adc4, ADC4);
 
-impl_single_independent_running_dma!(Adc3, dma::dma1::Channel1);
-impl_single_independent_running_dma!(Adc4, dma::dma2::Channel1);
+impl_single_independent_running_dma!(Adc3);
+impl_single_independent_running_dma!(Adc4);
 
 unsafe impl<'scope, P, S> AdcDmaTokens<'scope, Adc3<P, S>> for dma::dma2::Channel5 {
     type Channel = dma::dma2::Channel5;
