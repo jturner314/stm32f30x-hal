@@ -808,7 +808,7 @@ macro_rules! impl_single_disabled {
 }
 
 macro_rules! impl_single_enabled {
-    ($Adci:ident, $AdciChannel:ident) => {
+    ($Adci:ident, $AdciChannelRef:ident) => {
         impl<P> $Adci<P, Enabled> {
             /// Sets the data alignment.
             pub fn set_alignment(&mut self, align: Alignment) {
@@ -851,7 +851,7 @@ macro_rules! impl_single_enabled {
             /// **Panics** if `sequence.len() < 1 || sequence.len() > 16`.
             pub unsafe fn with_sequence_unchecked<'a>(
                 self,
-                sequence: &[$AdciChannel<'a>],
+                sequence: &[$AdciChannelRef<'a>],
             ) -> $Adci<P, WithSequence<'a>> {
                 debug_assert!(self.reg.cr.read().aden().bit_is_set());
                 debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
