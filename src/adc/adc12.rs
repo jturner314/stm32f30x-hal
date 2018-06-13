@@ -15,6 +15,11 @@ use time::Hertz;
 /// and channels.
 pub trait Adc12Ext {
     /// Enables the ADC1/2 clock and returns a wrapper and channels.
+    // Note that if we ever add a `free` method to return the `stm32f30x`
+    // tokens, we need to make sure to set the `EXTEN` and `JEXTEN` bits to
+    // `0b00` so that the ADC clock cannot be "changed on-the-fly while
+    // triggers are received from the master timer". (See the docs for the
+    // `TIMx_CR2` control register in the timer peripherals.)
     fn split(
         self,
         adc1: stm32f30x::ADC1,
@@ -107,6 +112,42 @@ impl<P, S1, S2> AdcPair for Adc12<P, S1, S2> {
     }
 }
 
+/// External trigger selection for ADC1/2 regular channels.
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum Adc12ExternalTrigger {
+    /// TIM1_CC1 event
+    Ext0 = 0b0000,
+    /// TIM1_CC2 event
+    Ext1 = 0b0001,
+    /// TIM1_CC3 event or TIM20_TRGO event (select with SYSCFG)
+    Ext2 = 0b0010,
+    /// TIM2_CC2 event or TIM20_TRGO2 event (select with SYSCFG)
+    Ext3 = 0b0011,
+    /// TIM3_TRGO event
+    Ext4 = 0b0100,
+    /// TIM4_CC4 event or TIM20_CC1 event (select with SYSCFG)
+    Ext5 = 0b0101,
+    /// TIM8_TRGO event
+    Ext7 = 0b0111,
+    /// TIM8_TRGO2 event
+    Ext8 = 0b1000,
+    /// TIM1_TRGO event
+    Ext9 = 0b1001,
+    /// TIM1_TRGO2 event
+    Ext10 = 0b1010,
+    /// TIM2_TRGO event
+    Ext11 = 0b1011,
+    /// TIM4_TRGO event
+    Ext12 = 0b1100,
+    /// TIM6_TRGO event or TIM20_CC2 event (select with SYSCFG)
+    Ext13 = 0b1101,
+    /// TIM15_TRGO event
+    Ext14 = 0b1110,
+    /// TIM3_CC4 event or TIM20_CC3 event (select with SYSCFG)
+    Ext15 = 0b1111,
+}
+
 /// Continuous iterator over regular conversions in dual simultaneous mode.
 pub struct Adc12ContIter<'p, 'm: 'p, 's: 'p> {
     pair: &'p mut Adc12<Dual, WithSequence<'m>, WithSequence<'s>>,
@@ -147,6 +188,9 @@ impl_single_enabled!(Adc2, Adc2ChannelRef);
 
 impl_single_with_sequence!(Adc1, Adc1ChannelId);
 impl_single_with_sequence!(Adc2, Adc2ChannelId);
+
+impl_single_not_running!(Adc1, Adc12ExternalTrigger);
+impl_single_not_running!(Adc2, Adc12ExternalTrigger);
 
 impl_single_independent_with_sequence!(Adc1, ADC1);
 impl_single_independent_with_sequence!(Adc2, ADC2);

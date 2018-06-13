@@ -15,6 +15,11 @@ use time::Hertz;
 /// and channels.
 pub trait Adc34Ext {
     /// Enables the ADC3/4 clock and returns a wrapper and channels.
+    // Note that if we ever add a `free` method to return the `stm32f30x`
+    // tokens, we need to make sure to set the `EXTEN` and `JEXTEN` bits to
+    // `0b00` so that the ADC clock cannot be "changed on-the-fly while
+    // triggers are received from the master timer". (See the docs for the
+    // `TIMx_CR2` control register in the timer peripherals.)
     fn split(
         self,
         adc3: stm32f30x::ADC3,
@@ -107,6 +112,42 @@ impl<P, S3, S4> AdcPair for Adc34<P, S3, S4> {
     }
 }
 
+/// External trigger selection for ADC3/4 regular channels.
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum Adc34ExternalTrigger {
+    /// TIM3_CC1 event
+    Ext0 = 0b0000,
+    /// TIM2_CC3 event
+    Ext1 = 0b0001,
+    /// TIM1_CC3 event
+    Ext2 = 0b0010,
+    /// TIM8_CC1 event
+    Ext3 = 0b0011,
+    /// TIM8_TRGO event
+    Ext4 = 0b0100,
+    /// TIM4_CC1 event or TIM20_TRGO2 event (select with SYSCFG)
+    Ext6 = 0b0110,
+    /// TIM2_TRGO event
+    Ext7 = 0b0111,
+    /// TIM8_TRGO2 event
+    Ext8 = 0b1000,
+    /// TIM1_TRGO event
+    Ext9 = 0b1001,
+    /// TIM1_TRGO2 event
+    Ext10 = 0b1010,
+    /// TIM3_TRGO event
+    Ext11 = 0b1011,
+    /// TIM4_TRGO event
+    Ext12 = 0b1100,
+    /// TIM7_TRGO event
+    Ext13 = 0b1101,
+    /// TIM15_TRGO event
+    Ext14 = 0b1110,
+    /// TIM2_CC1 event or TIM20_CC1 event (select with SYSCFG)
+    Ext15 = 0b1111,
+}
+
 /// Continuous iterator over regular conversions in dual simultaneous mode.
 pub struct Adc34ContIter<'p, 'm: 'p, 's: 'p> {
     pair: &'p mut Adc34<Dual, WithSequence<'m>, WithSequence<'s>>,
@@ -147,6 +188,9 @@ impl_single_enabled!(Adc4, Adc4ChannelRef);
 
 impl_single_with_sequence!(Adc3, Adc3ChannelId);
 impl_single_with_sequence!(Adc4, Adc4ChannelId);
+
+impl_single_not_running!(Adc3, Adc34ExternalTrigger);
+impl_single_not_running!(Adc4, Adc34ExternalTrigger);
 
 impl_single_independent_with_sequence!(Adc3, ADC3);
 impl_single_independent_with_sequence!(Adc4, ADC4);

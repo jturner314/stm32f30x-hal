@@ -68,6 +68,13 @@ pub struct RunningDmaSlave<'seq: 'scope, 'body, 'scope: 'body> {
     scope: PhantomData<&'scope ()>,
 }
 
+/// Regular conversions are not running (ADSTART = 0).
+pub unsafe trait NotRunning {}
+unsafe impl NotRunning for Unpowered {}
+unsafe impl NotRunning for Disabled {}
+unsafe impl NotRunning for Enabled {}
+unsafe impl<'a> NotRunning for WithSequence<'a> {}
+
 /// ADCs in pair are in independent mode.
 #[derive(Debug)]
 pub struct Independent {}
@@ -160,6 +167,31 @@ impl Resolution {
 impl Default for Resolution {
     fn default() -> Self {
         Resolution::Bit12
+    }
+}
+
+/// Trigger polarity and, if external, which external trigger.
+#[derive(Clone, Copy, Debug)]
+pub enum Trigger<External> {
+    /// Software trigger.
+    Software,
+    /// Hardware trigger with detection on the rising edge.
+    Rising(External),
+    /// Hardware trigger with detection on the falling edge.
+    Falling(External),
+    /// Hardware trigger with detection on both the rising and falling edges.
+    RisingAndFalling(External),
+}
+
+impl<External> Trigger<External> {
+    /// Returns the bits for the EXTEN field in the CFGR register.
+    fn exten_bits(self) -> u8 {
+        match self {
+            Trigger::Software => 0b00,
+            Trigger::Rising(_) => 0b01,
+            Trigger::Falling(_) => 0b10,
+            Trigger::RisingAndFalling(_) => 0b11,
+        }
     }
 }
 
@@ -1060,6 +1092,31 @@ macro_rules! impl_single_with_sequence {
                     reg: self.reg,
                     pair_state: self.pair_state,
                     state: Enabled {},
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_single_not_running {
+    ($Adci:ident, $AdcijExternalTrigger:ident) => {
+        impl<P, S> $Adci<P, S>
+        where
+            S: NotRunning,
+        {
+            /// Selects the trigger for regular conversions.
+            pub fn set_trigger(&mut self, trigger: Trigger<$AdcijExternalTrigger>) {
+                match trigger {
+                    Trigger::Software => self
+                        .reg
+                        .cfgr
+                        .modify(|_, w| unsafe { w.exten().bits(trigger.exten_bits()) }),
+                    Trigger::Rising(ext)
+                    | Trigger::Falling(ext)
+                    | Trigger::RisingAndFalling(ext) => self.reg.cfgr.modify(|_, w| unsafe {
+                        w.exten().bits(trigger.exten_bits());
+                        w.extsel().bits(ext as u8)
+                    }),
                 }
             }
         }
