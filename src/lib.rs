@@ -33,6 +33,7 @@ extern crate embedded_hal as hal;
 extern crate heapless;
 extern crate nb;
 pub extern crate stm32f30x;
+#[macro_use(scope)]
 extern crate strong_scope_guard;
 extern crate vcell;
 extern crate void;

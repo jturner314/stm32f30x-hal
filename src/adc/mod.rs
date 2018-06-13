@@ -643,6 +643,34 @@ macro_rules! impl_pair_withsequence_withsequence {
                     },
                 }
             }
+
+            /// Fills the buffer with ADC measurements, using DMA.
+            ///
+            /// Sets the ADCs to continuous conversion mode with auto-delay;
+            /// configures and enables the DMA channel for writing into the
+            /// buffer in one shot mode; starts the regular sequence; and waits
+            /// for the DMA transfer to complete.
+            ///
+            /// This method uses dual-DMA mode (`MDMA = 0b10`) so that only a
+            /// single DMA channel is necessary.
+            // TODO: take self and the DMA channel by mutable reference
+            pub fn fill_buf_dma<'a, D>(
+                self,
+                buf: &'a mut [[u16; 2]],
+                dma_tok: D,
+            ) -> (Self, D::Channel)
+            where
+                'm: 'a,
+                's: 'a,
+                D: AdcDmaTokens<'a, <Self as AdcPair>::Master>,
+            {
+                let (pair, dma_chan) = scope!(move |guard| {
+                    let running = self.start_dma(buf, guard, dma_tok);
+                    let (pair, dma_chan, _, _) = running.wait();
+                    (pair, dma_chan)
+                });
+                (pair, dma_chan)
+            }
         }
     };
 }
@@ -1250,6 +1278,26 @@ macro_rules! impl_single_independent_with_sequence {
                         transfer: transfer,
                     },
                 }
+            }
+
+            /// Fills the buffer with ADC measurements, using DMA.
+            ///
+            /// Sets the ADC to continuous conversion mode with auto-delay;
+            /// configures and enables the DMA channel for writing into the
+            /// buffer in one shot mode; starts the regular sequence; and waits
+            /// for the DMA transfer to complete.
+            // TODO: take self and the DMA channel by mutable reference
+            pub fn fill_buf_dma<'a, D>(self, buf: &'a mut [u16], dma_tok: D) -> (Self, D::Channel)
+            where
+                'seq: 'a,
+                D: AdcDmaTokens<'a, Self>,
+            {
+                let (adc, dma_chan) = scope!(move |guard| {
+                    let running = self.start_dma(buf, guard, dma_tok);
+                    let (adc, dma_chan, _, _) = running.wait();
+                    (adc, dma_chan)
+                });
+                (adc, dma_chan)
             }
         }
     };
