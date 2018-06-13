@@ -824,6 +824,7 @@ macro_rules! impl_single_enabled {
             }
 
             /// Sets the data resolution.
+            // TODO: allow this method in other states
             pub fn set_resolution(&mut self, res: Resolution) {
                 debug_assert!(self.reg.cr.read().adstart().bit_is_clear());
                 debug_assert!(self.reg.cr.read().jadstart().bit_is_clear());
@@ -833,6 +834,7 @@ macro_rules! impl_single_enabled {
             }
 
             /// Gets the data resolution.
+            // TODO: allow this method in other states
             pub fn resolution(&self) -> Resolution {
                 Resolution::from_bits(self.reg.cfgr.read().res().bits())
             }
