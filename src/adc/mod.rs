@@ -1107,6 +1107,8 @@ macro_rules! impl_single_not_running {
             S: NotRunning,
         {
             /// Selects the trigger for regular conversions.
+            ///
+            /// Note that in dual ADC modes, the trigger of the slave ADC is ignored.
             pub fn set_trigger(&mut self, trigger: Trigger<$AdcijExternalTrigger>) {
                 match trigger {
                     Trigger::Software => self
