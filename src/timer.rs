@@ -22,6 +22,24 @@ pub enum Event {
     TimeOut,
 }
 
+/// Information to be sent in master mode to slave timers for synchronization (TRGO).
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum MasterMode {
+    /// Reset
+    Reset = 0b000,
+    /// Enable
+    Enable = 0b001,
+    /// The update event is selected as trigger ouptut (TRGO).
+    Update = 0b010,
+    // /// Compare pulse
+    // ComparePulse = 0b011,
+    // /// OC1REF signal is used as trigger output (TRGO).
+    // Oc1Ref = 0b100,
+    // /// OC2REF signal is used as trigger output (TRGO).
+    // Oc2Ref = 0b101,
+}
+
 macro_rules! hal {
     ($($TIM:ident: ($tim:ident, $timXen:ident, $timXrst:ident),)+) => {
         $(
@@ -90,6 +108,11 @@ macro_rules! hal {
                     timer.start(timeout);
 
                     timer
+                }
+
+                /// Master mode selection.
+                pub fn set_master_mode(&mut self, mode: MasterMode) {
+                    self.tim.cr2.modify(|_, w| unsafe { w.mms().bits(mode as u8) })
                 }
 
                 /// Starts listening for an `event`
