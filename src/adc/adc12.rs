@@ -374,7 +374,7 @@ pub mod channels {
     }
 
     /// The numeric ID of an ADC1 channel.
-    #[derive(Clone, Copy, Eq, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[repr(u8)]
     pub enum Adc1ChannelId {
         /// ADC1_IN1
@@ -435,7 +435,7 @@ pub mod channels {
     }
 
     /// The numeric ID of an ADC2 channel.
-    #[derive(Clone, Copy, Eq, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[repr(u8)]
     pub enum Adc2ChannelId {
         /// ADC2_IN1
