@@ -7,7 +7,7 @@
 use core::marker::PhantomData;
 use dma;
 use gpio::Analog;
-use heapless::Vec;
+use heapless::{consts::U16, Vec};
 use strong_scope_guard::ScopeGuard;
 use syscfg;
 
@@ -1007,7 +1007,7 @@ macro_rules! impl_single_with_sequence {
             }
 
             /// Returns the channel IDs in the regular sequence.
-            pub fn sequence_ids(&self) -> Vec<$AdciChannelId, [$AdciChannelId; 16]> {
+            pub fn sequence_ids(&self) -> Vec<$AdciChannelId, U16> {
                 let sqr1 = self.reg.sqr1.read();
                 let num_channels = sqr1.l3().bits() + 1;
                 let mut ids = Vec::new();
